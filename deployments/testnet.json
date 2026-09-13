@@ -1,0 +1,10 @@
+{
+  "network": "testnet",
+  "networkPassphrase": "Test SDF Network ; September 2015",
+  "deployedAt": "2026-09-13T20:04:24Z",
+  "commit": "d1dc1b4",
+  "wasmSha256": "2af58aaebdd51405926baeb472bb7dd8a75163636bdaa084c6766e1c65052d72",
+  "contracts": {
+    "escrow": "CA3W2JO6TD3JCPTNUSNSMNROYM6NSSQID55H5BKO6GLQQKNZ5KKEIZZG"
+  }
+}
