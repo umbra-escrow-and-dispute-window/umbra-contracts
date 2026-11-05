@@ -59,7 +59,7 @@ fn hash(env: &Env, b: u8) -> BytesN<32> {
     BytesN::from_array(env, &[b; 32])
 }
 
-impl<'a> Ctx<'a> {
+impl Ctx<'_> {
     fn create(&self, arbiter: ArbiterConfig) -> u64 {
         self.client.create_escrow(
             &self.buyer,

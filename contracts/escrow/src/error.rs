@@ -11,16 +11,16 @@ pub enum Error {
     InvalidState = 3,
     InvalidAmount = 4,
     InvalidWindow = 5,
-    /// dispute() was called on an escrow whose arbiter is `None`, so no one
+    /// `dispute()` was called on an escrow whose arbiter is `None`, so no one
     /// could ever resolve it.
     ArbiterRequired = 6,
     /// The requested arbiter variant is declared but not implemented in v0.1.
     Unimplemented = 7,
-    /// dispute() after the dispute window closed.
+    /// `dispute()` after the dispute window closed.
     DisputeWindowClosed = 8,
-    /// claim_timeout() before the confirm window elapsed.
+    /// `claim_timeout()` before the confirm window elapsed.
     ConfirmWindowOpen = 9,
-    /// Split verdict with buyer_bps outside 0..=10000.
+    /// Split verdict with `buyer_bps` outside 0..=10000.
     InvalidVerdict = 10,
     Overflow = 11,
 }
