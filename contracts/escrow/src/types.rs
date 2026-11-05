@@ -1,8 +1,8 @@
 use soroban_sdk::{contracttype, Address, BytesN, Vec};
 
-/// Lifecycle state. Terminal states (Released, Refunded, ResolvedBuyer,
-/// ResolvedSeller, ResolvedSplit) accept no further transitions. The normative
-/// transition table lives in docs/protocol.md; code follows it.
+/// Lifecycle state. Terminal states (`Released`, `Refunded`, `ResolvedBuyer`,
+/// `ResolvedSeller`, `ResolvedSplit`) accept no further transitions. The normative
+/// transition table lives in `docs/protocol.md`; code follows it.
 #[contracttype]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum State {
@@ -24,7 +24,7 @@ pub enum State {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ArbiterConfig {
-    /// Timeout only. dispute() is rejected because nothing could resolve it.
+    /// Timeout only. `dispute()` is rejected because nothing could resolve it.
     None,
     Single(Address),
     Panel(Vec<Address>, u32),
@@ -32,13 +32,13 @@ pub enum ArbiterConfig {
 }
 
 /// An arbiter's decision. Amounts split with `Split` round the remainder to the
-/// seller; see docs/protocol.md.
+/// seller; see `docs/protocol.md`.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Verdict {
     RefundBuyer,
     ReleaseSeller,
-    /// buyer_bps in 0..=10000 is the buyer's share; the seller takes the rest.
+    /// `buyer_bps` in `0..=10000` is the buyer's share; the seller takes the rest.
     Split(u32),
 }
 
@@ -57,7 +57,7 @@ pub struct Escrow {
     pub terms_hash: BytesN<32>,
     pub state: State,
     pub created_at: u64,
-    /// Ledger time of mark_delivered; the confirm and dispute windows count
+    /// Ledger time of `mark_delivered`; the confirm and dispute windows count
     /// from here. Zero until delivery.
     pub delivered_at: u64,
     pub proof_hash: BytesN<32>,

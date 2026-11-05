@@ -19,7 +19,7 @@ pub use types::{ArbiterConfig, DataKey, Escrow, State, Verdict};
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env};
 
 // Basis points denominator for split verdicts.
-const BPS_DENOM: i128 = 10_000;
+const BPS_DENOM: u32 = 10_000;
 
 // TTL bumps. Ledgers close roughly every five seconds, so a day is ~17280.
 // Live escrows are extended well past a plausible dispute window so an active
@@ -192,8 +192,8 @@ impl EscrowContract {
         }
         match &e.arbiter {
             ArbiterConfig::Single(arbiter) => arbiter.require_auth(),
-            // Unreachable: dispute() rejects ArbiterConfig::None. Kept explicit
-            // so a future edit to dispute() cannot silently open this path.
+            // Unreachable: `dispute()` rejects `ArbiterConfig::None`. Kept explicit
+            // so a future edit to `dispute()` cannot silently open this path.
             ArbiterConfig::None => return Err(Error::ArbiterRequired),
             ArbiterConfig::Panel(_, _) | ArbiterConfig::Signed(_) => {
                 return Err(Error::Unimplemented)
@@ -210,7 +210,7 @@ impl EscrowContract {
                 State::ResolvedSeller
             }
             Verdict::Split(buyer_bps) => {
-                if buyer_bps > BPS_DENOM as u32 {
+                if buyer_bps > BPS_DENOM {
                     return Err(Error::InvalidVerdict);
                 }
                 // Rounding direction: the buyer's share is floored, so the
@@ -218,9 +218,9 @@ impl EscrowContract {
                 // protocol.md so tests and reviewers agree on the odd-amount case.
                 let buyer_amount = e
                     .amount
-                    .checked_mul(buyer_bps as i128)
+                    .checked_mul(i128::from(buyer_bps))
                     .ok_or(Error::Overflow)?
-                    / BPS_DENOM;
+                    / i128::from(BPS_DENOM);
                 let seller_amount = e.amount.checked_sub(buyer_amount).ok_or(Error::Overflow)?;
                 if buyer_amount > 0 {
                     Self::pay(&env, &e, &e.buyer, buyer_amount);

@@ -59,7 +59,7 @@ fn hash(env: &Env, b: u8) -> BytesN<32> {
     BytesN::from_array(env, &[b; 32])
 }
 
-impl<'a> Ctx<'a> {
+impl Ctx<'_> {
     fn create(&self, arbiter: ArbiterConfig) -> u64 {
         self.client.create_escrow(
             &self.buyer,
@@ -222,6 +222,44 @@ fn split_rejects_bps_over_denominator() {
         c.client.try_resolve(&id, &Verdict::Split(10_001), &None),
         Err(Ok(Error::InvalidVerdict))
     );
+}
+
+#[test]
+fn split_zero_bps_pays_entire_amount_to_seller() {
+    let c = setup();
+    let id = c.create(c.single());
+    c.client.fund(&id);
+    c.client.mark_delivered(&id, &hash(&c.env, 2));
+    c.client.dispute(&id, &hash(&c.env, 3));
+
+    c.client.resolve(&id, &Verdict::Split(0), &None);
+
+    assert_eq!(
+        c.client.get_escrow(&id).unwrap().state,
+        State::ResolvedSplit
+    );
+    assert_eq!(c.token_client.balance(&c.buyer), AMOUNT * 10 - AMOUNT);
+    assert_eq!(c.token_client.balance(&c.seller), AMOUNT);
+    assert_eq!(c.token_client.balance(&c.contract_id), 0);
+}
+
+#[test]
+fn split_full_bps_pays_entire_amount_to_buyer() {
+    let c = setup();
+    let id = c.create(c.single());
+    c.client.fund(&id);
+    c.client.mark_delivered(&id, &hash(&c.env, 2));
+    c.client.dispute(&id, &hash(&c.env, 3));
+
+    c.client.resolve(&id, &Verdict::Split(10_000), &None);
+
+    assert_eq!(
+        c.client.get_escrow(&id).unwrap().state,
+        State::ResolvedSplit
+    );
+    assert_eq!(c.token_client.balance(&c.buyer), AMOUNT * 10);
+    assert_eq!(c.token_client.balance(&c.seller), 0);
+    assert_eq!(c.token_client.balance(&c.contract_id), 0);
 }
 
 // --- Legal path: cancel before delivery ---
