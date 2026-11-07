@@ -35,13 +35,13 @@ before any state change.
 
 | ID | Call | From | To | Actor | Precondition | Effect |
 |----|------|------|----|-------|--------------|--------|
-| T1 | `create_escrow` | (none) | Created | buyer | `amount > 0`; `confirm_window > 0`; `dispute_window > 0`; `confirm_window >= dispute_window` | Stores terms; assigns id. |
+| T1 | `create_escrow` | (none) | Created | buyer | `amount > 0`; `dispute_bond >= 0`; `confirm_window > 0`; `dispute_window > 0`; `confirm_window >= dispute_window` | Stores terms; assigns id. |
 | T2 | `fund` | Created | Funded | buyer | buyer signs | Transfers `amount` of `asset` from buyer into the contract. |
 | T3 | `mark_delivered` | Funded | Delivered | seller | seller signs | Stores `proof_hash`; sets `delivered_at` to ledger time. Confirm and dispute windows start here. |
 | T4 | `confirm` | Delivered | Released | buyer | buyer signs | Pays `amount` to seller. |
 | T5 | `claim_timeout` | Delivered | Released | seller | `now >= delivered_at + confirm_window` | Pays `amount` to seller. |
-| T6 | `dispute` | Delivered | Disputed | buyer | arbiter is not `None`; `now <= delivered_at + dispute_window` | Stores `reason_hash`. |
-| T7 | `resolve` | Disputed | ResolvedBuyer / ResolvedSeller / ResolvedSplit | arbiter | arbiter signs | Distributes per verdict. |
+| T6 | `dispute` | Delivered | Disputed | buyer | arbiter is not `None`; `now <= delivered_at + dispute_window` | Stores `reason_hash`; transfers `dispute_bond` from buyer to contract if `dispute_bond > 0`. |
+| T7 | `resolve` | Disputed | ResolvedBuyer / ResolvedSeller / ResolvedSplit | arbiter | arbiter signs | Distributes `amount` and any `dispute_bond` per verdict. |
 | T8 | `cancel` | Created or Funded | Refunded | buyer or seller | caller is a party | Refunds buyer if funds are held. |
 
 `get_escrow` reads and never transitions.
@@ -64,12 +64,12 @@ is what the collateral and clawback path (M6) will address.
 
 `resolve` takes a `Verdict`:
 
-- `RefundBuyer` pays the full `amount` to the buyer.
-- `ReleaseSeller` pays the full `amount` to the seller.
-- `Split(buyer_bps)` where `buyer_bps` is in `0..=10000`. The buyer's share is
-  `amount * buyer_bps / 10000` using integer division, so it is floored. The
-  seller receives `amount - buyer_share`. **The rounded-off stroop always goes to
-  the seller.** For `amount = 1000` and `buyer_bps = 3333`, the buyer receives
+- `RefundBuyer` pays the full `amount` to the buyer and refunds any `dispute_bond` to the buyer.
+- `ReleaseSeller` pays the full `amount` to the seller and forfeits any `dispute_bond` to the seller.
+- `Split(buyer_bps)` where `buyer_bps` is in `0..=10000`. The buyer's share of total funds (`amount` plus `dispute_bond`)
+  is `total * buyer_bps / 10000` using integer division, so it is floored. The
+  seller receives `total - buyer_share`. **The rounded-off stroop always goes to
+  the seller.** For `amount = 1000` and `buyer_bps = 3333` (with 0 bond), the buyer receives
   333 and the seller receives 667. `buyer_bps > 10000` returns `InvalidVerdict`.
 
 All amount arithmetic is checked; an overflow returns `Overflow` rather than
