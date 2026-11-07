@@ -78,7 +78,7 @@ impl EscrowContract {
             }
         }
 
-        let id = Self::next_id(&env);
+        let id = Self::next_id(&env)?;
         let escrow = Escrow {
             id,
             buyer,
@@ -398,6 +398,19 @@ impl EscrowContract {
         env.storage().persistent().get(&DataKey::Escrow(escrow_id))
     }
 
+    /// Extends the persistent and instance storage TTL for an existing escrow.
+    pub fn extend_escrow_ttl(env: Env, escrow_id: u64) -> Result<(), Error> {
+        let _ = Self::load(&env, escrow_id)?;
+        let key = DataKey::Escrow(escrow_id);
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, ESCROW_TTL_THRESHOLD, ESCROW_TTL);
+        env.storage()
+            .instance()
+            .extend_ttl(ESCROW_TTL_THRESHOLD, ESCROW_TTL);
+        Ok(())
+    }
+
     // --- internal helpers ---
 
     fn pay(env: &Env, e: &Escrow, to: &Address, amount: i128) {
@@ -420,13 +433,14 @@ impl EscrowContract {
             .extend_ttl(&key, ESCROW_TTL_THRESHOLD, ESCROW_TTL);
     }
 
-    fn next_id(env: &Env) -> u64 {
+    fn next_id(env: &Env) -> Result<u64, Error> {
         let id: u64 = env.storage().instance().get(&DataKey::NextId).unwrap_or(1);
-        env.storage().instance().set(&DataKey::NextId, &(id + 1));
+        let next = id.checked_add(1).ok_or(Error::Overflow)?;
+        env.storage().instance().set(&DataKey::NextId, &next);
         env.storage()
             .instance()
             .extend_ttl(ESCROW_TTL_THRESHOLD, ESCROW_TTL);
-        id
+        Ok(id)
     }
 }
 
