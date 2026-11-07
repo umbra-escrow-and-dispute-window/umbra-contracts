@@ -9,8 +9,8 @@ use soroban_sdk::{
 use crate::{ArbiterConfig, Error, EscrowContract, EscrowContractClient, State, Verdict};
 
 const AMOUNT: i128 = 1_000;
-const CONFIRM_WINDOW: u64 = 1_000;
-const DISPUTE_WINDOW: u64 = 2_000;
+const CONFIRM_WINDOW: u64 = 2_000;
+const DISPUTE_WINDOW: u64 = 1_000;
 const START_TS: u64 = 10_000;
 
 struct Ctx<'a> {
@@ -455,6 +455,23 @@ fn create_rejects_zero_window() {
         &hash(&c.env, 1),
     );
     assert_eq!(r, Err(Ok(Error::InvalidWindow)));
+}
+
+#[test]
+fn create_rejects_confirm_window_shorter_than_dispute_window() {
+    let c = setup();
+    let r = c.client.try_create_escrow(
+        &c.buyer,
+        &c.seller,
+        &c.token,
+        &AMOUNT,
+        &(START_TS + 500),
+        &1_000,
+        &2_000,
+        &ArbiterConfig::None,
+        &hash(&c.env, 1),
+    );
+    assert_eq!(r, Err(Ok(Error::InvalidWindowOrdering)));
 }
 
 // --- Unauthorised (wrong signer) paths ---
