@@ -682,6 +682,46 @@ fn resolve_signed_with_tampered_payload_fails() {
     assert!(r.is_err());
 }
 
+#[test]
+fn resolve_signed_replay_across_escrows_fails() {
+    use ed25519_dalek::{Signer, SigningKey};
+
+    let c = setup();
+    let signing_key = SigningKey::from_bytes(&[42u8; 32]);
+    let pubkey_bytes: BytesN<32> =
+        BytesN::from_array(&c.env, &signing_key.verifying_key().to_bytes());
+
+    let id1 = c.create(ArbiterConfig::Signed(pubkey_bytes.clone()));
+    let id2 = c.create(ArbiterConfig::Signed(pubkey_bytes));
+
+    c.client.fund(&id1);
+    c.client.mark_delivered(&id1, &hash(&c.env, 2));
+    c.client.dispute(&id1, &hash(&c.env, 3));
+
+    c.client.fund(&id2);
+    c.client.mark_delivered(&id2, &hash(&c.env, 2));
+    c.client.dispute(&id2, &hash(&c.env, 3));
+
+    // Sign valid verdict for escrow id1
+    let verdict = Verdict::RefundBuyer;
+    let payload1 = EscrowContract::signed_verdict_payload(&c.env, id1, &verdict);
+    let mut raw_payload1 = [0u8; 32];
+    payload1.copy_into_slice(&mut raw_payload1);
+    let sig1 = signing_key.sign(&raw_payload1);
+    let sig1_bytes: BytesN<64> = BytesN::from_array(&c.env, &sig1.to_bytes());
+
+    // Attempting to replay id1's signature on id2 fails verification
+    let r_replay = c.client.try_resolve_signed(&id2, &verdict, &sig1_bytes);
+    assert!(r_replay.is_err());
+
+    // Resolving id1 with its own signature succeeds
+    c.client.resolve_signed(&id1, &verdict, &sig1_bytes);
+    assert_eq!(
+        c.client.get_escrow(&id1).unwrap().state,
+        State::ResolvedBuyer
+    );
+}
+
 // --- Validation at creation ---
 
 #[test]
