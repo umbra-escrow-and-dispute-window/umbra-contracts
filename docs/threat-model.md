@@ -25,10 +25,8 @@ arbiter is the largest single risk. Mitigations in v0.1:
   fund.
 - `resolve` requires the arbiter's signature; no one else can resolve.
 - Every resolution emits an event, so verdicts are public and attributable.
-
-Not yet mitigated: a single arbiter is a single point of failure. Panel
-arbitration with a signing threshold (M7) reduces this, and the `Panel` variant
-is already declared so adding it is not a breaking change. Tracked in `ISSUES.md`.
+- Panel arbitration (`ArbiterConfig::Panel(members, threshold)`) requires `threshold`
+  distinct member signatures to resolve, eliminating any single arbiter as a single point of failure.
 
 ## Griefing by disputes
 

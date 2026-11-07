@@ -82,8 +82,7 @@ wrapping.
 - `None` — timeout only. `dispute` is rejected with `ArbiterRequired`, because no
   one could resolve it.
 - `Single(Address)` — one named arbiter. Implemented.
-- `Panel(Vec<Address>, threshold)` — declared, not implemented. `resolve` returns
-  `Unimplemented`.
+- `Panel(Vec<Address>, threshold)` — multi-party panel arbitration. Implemented. Requires at least `threshold` distinct member signatures.
 - `Signed(BytesN<32>)` — an off-chain signed verdict from a known key, for the
   automated adjudicator. Declared, not implemented. `resolve` returns
   `Unimplemented`.
@@ -107,12 +106,18 @@ that adding them later is not a breaking change.
 | 10 | InvalidVerdict | `Split` with `buyer_bps > 10000`. |
 | 11 | Overflow | Checked arithmetic overflowed. |
 | 12 | InvalidWindowOrdering | `confirm_window < dispute_window` at creation. |
+| 13 | BelowThreshold | Number of authorizing panel signers is below threshold. |
+| 14 | DuplicateSigner | Duplicate address in panel configuration or signers list. |
+| 15 | InvalidThreshold | Panel threshold is zero or exceeds member count. |
 
 ## Deviation from the PRD signature
 
-`cancel` takes an extra `caller: Address` argument not shown in PRD section 4.2.
-Authenticating "either party" requires knowing which party is calling; the extra
-argument is that party, and it is authenticated and checked against the escrow.
+- `cancel` takes an extra `caller: Address` argument not shown in PRD section 4.2.
+  Authenticating "either party" requires knowing which party is calling; the extra
+  argument is that party, and it is authenticated and checked against the escrow.
+- `resolve` takes `signers: Option<Vec<Address>>` for `Panel` arbitration and
+  `signature: Option<BytesN<64>>` for `Signed` adjudicators. A companion entry point
+  `resolve_panel` is also provided.
 
 ## Events
 
