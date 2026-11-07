@@ -29,7 +29,17 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test
+        run: cargo test --workspace --locked
 
       - name: Build WASM
-        run: cargo build --target wasm32v1-none --release
+        run: cargo build --target wasm32v1-none --release --locked
+
+      - name: Validate deployment and demo scripts
+        run: |
+          bash -n scripts/deploy_testnet.sh
+          bash -n scripts/deploy_mainnet.sh
+          bash -n scripts/demo.sh
+          if ./scripts/deploy_mainnet.sh >/dev/null 2>&1; then
+            echo "Mainnet deploy script failed to block unflagged execution" >&2
+            exit 1
+          fi
