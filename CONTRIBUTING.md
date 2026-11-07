@@ -35,9 +35,9 @@ Four concepts carry the whole design:
 - **Windows.** After the seller marks delivery, two clocks start from the same
   ledger timestamp: a confirm window, after which the seller can claim payment,
   and a dispute window, inside which the buyer can dispute.
-- **Arbiter.** Chosen per escrow at creation. In v0.1 only a single named arbiter
-  is implemented; a panel and a signed automated adjudicator are declared in the
-  types but return `Unimplemented`.
+- **Arbiter.** Chosen per escrow at creation. Supports a single named arbiter
+  (`Single`), a multi-party threshold panel (`Panel`), an automated Ed25519
+  adjudicator (`Signed`), or timeout-only (`None`).
 - **Hashes, not documents.** Terms, delivery proofs, and dispute reasons live off
   chain. The contract stores only their 32-byte hashes.
 
@@ -52,17 +52,20 @@ contracts/escrow/src/
   lib.rs        Contract entry points, one per transition (cites protocol.md rows)
   types.rs      Escrow, State, ArbiterConfig, Verdict, storage keys
   error.rs      Typed error codes; stable, do not renumber
-  events.rs     One event per transition
-  test.rs       Every legal and illegal transition, plus unauthorised paths
+  events.rs     Transition and Astrolabe terminal attestation events
+  test.rs       Every legal, illegal, unauthorised, and property test
 docs/
-  protocol.md       Normative state machine and error codes
-  threat-model.md   Arbiter capture, griefing, timeout races, clawback limits
-  multi-repo.md     Cross-repository contract, shared across all three repos
+  protocol.md           Normative state machine and error codes
+  events.md             Event schema for indexers and Astrolabe attestations
+  threat-model.md       Arbiter capture, griefing, timeout races, clawback limits
+  mainnet-checklist.md  Pre-deployment audit and release gate for Mainnet
+  multi-repo.md         Cross-repository contract, shared across all three repos
 scripts/
-  deploy_testnet.sh Build, deploy, write deployments/testnet.json
-  demo.sh           Full happy and dispute paths against Testnet
+  deploy_testnet.sh     Build, deploy, write deployments/testnet.json
+  deploy_mainnet.sh     Flag-gated Mainnet deploy script
+  demo.sh               Full happy and dispute paths against Testnet
 deployments/
-  testnet.json      Deployment truth vendored by the SDK
+  testnet.json          Deployment truth vendored by the SDK
 ```
 
 Nothing here is generated; every file is edited by hand. The build output under
@@ -84,7 +87,7 @@ tests run entirely in a simulated environment and need no network:
 git clone https://github.com/umbra-escrow-and-dispute-window/umbra-contracts
 cd umbra-contracts
 
-cargo test          # 28 tests, all in-memory, no network
+cargo test          # 55 tests, all in-memory, no network
 ```
 
 On Windows, if cargo cannot reach crates.io with a certificate-revocation error,
@@ -117,22 +120,21 @@ list with acceptance criteria is `ISSUES.md`; this is the same list, ordered
 easiest to hardest, and the two must agree.
 
 1. **Warn on a confirm window shorter than the dispute window** (`good first
-   issue`). Close a configuration footgun in `create_escrow`. See
-   `docs/threat-model.md`, "Timeout races".
-2. **Document and test the event schema** (`good first issue`). Write
-   `docs/events.md` and assert emitted events match it.
-3. **Property tests for split rounding** (`intermediate`). Fuzz the split maths
-   against `docs/protocol.md`, "Verdicts and rounding".
-4. **Dispute bond to deter griefing** (`intermediate`). An optional per-escrow
-   bond posted on dispute.
-5. **Astrolabe attestation on terminal states** (`intermediate`). Write a dispute
-   record on every terminal outcome (PRD section 4.4).
-6. **Mainnet configuration and release checklist** (`intermediate`). A reviewed,
-   flagged path off Testnet.
-7. **Panel arbitration with threshold signatures** (`advanced`). Implement the
-   declared `Panel` variant.
-8. **Signed adjudicator verdicts** (`advanced`). Implement the declared `Signed`
-   variant.
+   issue`, **Resolved**). Enforced in `create_escrow` with `InvalidWindowOrdering`.
+2. **Document and test the event schema** (`good first issue`, **Resolved**).
+   Documented in `docs/events.md` and verified in integration tests.
+3. **Property tests for split rounding** (`intermediate`, **Resolved**). Verified
+   across wide amount and basis-point ranges in `test.rs`.
+4. **Dispute bond to deter griefing** (`intermediate`, **Resolved**). Per-escrow
+   `dispute_bond` posted on `dispute` and settled on `resolve`.
+5. **Astrolabe attestation on terminal states** (`intermediate`, **Resolved**).
+   Emits `AttestationRecord` on every terminal outcome.
+6. **Mainnet configuration and release checklist** (`intermediate`, **Resolved**).
+   Documented in `docs/mainnet-checklist.md` and gated in `scripts/deploy_mainnet.sh`.
+7. **Panel arbitration with threshold signatures** (`advanced`, **Resolved**).
+   Implemented `ArbiterConfig::Panel(members, threshold)` and `resolve_panel`.
+8. **Signed adjudicator verdicts** (`advanced`, **Resolved**). Implemented
+   `ArbiterConfig::Signed(key)` Ed25519 verification and `resolve_signed`.
 9. **Collateral vault, `UMBR` receipt asset, and clawback settlement**
    (`advanced`). **This is the single largest unclaimed piece**: the post-release
    reversal case, the reason clawback exists at all. Read the threat model first.
