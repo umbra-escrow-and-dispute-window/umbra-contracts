@@ -25,4 +25,10 @@ pub enum Error {
     Overflow = 11,
     /// `confirm_window` is shorter than `dispute_window`, which would create a timeout race footgun.
     InvalidWindowOrdering = 12,
+    /// Number of authorizing panel signers is below the required threshold.
+    BelowThreshold = 13,
+    /// Duplicate signer encountered in panel configuration or authorization list.
+    DuplicateSigner = 14,
+    /// Panel threshold is zero or exceeds the number of panel members.
+    InvalidThreshold = 15,
 }
