@@ -62,11 +62,16 @@ fn hash(env: &Env, b: u8) -> BytesN<32> {
 
 impl Ctx<'_> {
     fn create(&self, arbiter: ArbiterConfig) -> u64 {
+        self.create_with_bond(arbiter, 0)
+    }
+
+    fn create_with_bond(&self, arbiter: ArbiterConfig, dispute_bond: i128) -> u64 {
         self.client.create_escrow(
             &self.buyer,
             &self.seller,
             &self.token,
             &AMOUNT,
+            &dispute_bond,
             &(START_TS + 500),
             &CONFIRM_WINDOW,
             &DISPUTE_WINDOW,
@@ -532,6 +537,7 @@ fn create_panel_rejects_invalid_threshold_or_duplicate_members() {
         &c.seller,
         &c.token,
         &AMOUNT,
+        &0,
         &(START_TS + 500),
         &CONFIRM_WINDOW,
         &DISPUTE_WINDOW,
@@ -547,6 +553,7 @@ fn create_panel_rejects_invalid_threshold_or_duplicate_members() {
         &c.seller,
         &c.token,
         &AMOUNT,
+        &0,
         &(START_TS + 500),
         &CONFIRM_WINDOW,
         &DISPUTE_WINDOW,
@@ -562,6 +569,7 @@ fn create_panel_rejects_invalid_threshold_or_duplicate_members() {
         &c.seller,
         &c.token,
         &AMOUNT,
+        &0,
         &(START_TS + 500),
         &CONFIRM_WINDOW,
         &DISPUTE_WINDOW,
@@ -684,6 +692,25 @@ fn create_rejects_non_positive_amount() {
         &c.seller,
         &c.token,
         &0,
+        &0,
+        &(START_TS + 500),
+        &CONFIRM_WINDOW,
+        &DISPUTE_WINDOW,
+        &ArbiterConfig::None,
+        &hash(&c.env, 1),
+    );
+    assert_eq!(r, Err(Ok(Error::InvalidAmount)));
+}
+
+#[test]
+fn create_rejects_negative_dispute_bond() {
+    let c = setup();
+    let r = c.client.try_create_escrow(
+        &c.buyer,
+        &c.seller,
+        &c.token,
+        &AMOUNT,
+        &-1,
         &(START_TS + 500),
         &CONFIRM_WINDOW,
         &DISPUTE_WINDOW,
@@ -701,6 +728,7 @@ fn create_rejects_zero_window() {
         &c.seller,
         &c.token,
         &AMOUNT,
+        &0,
         &(START_TS + 500),
         &0,
         &DISPUTE_WINDOW,
@@ -718,6 +746,7 @@ fn create_rejects_confirm_window_shorter_than_dispute_window() {
         &c.seller,
         &c.token,
         &AMOUNT,
+        &0,
         &(START_TS + 500),
         &1_000,
         &2_000,
@@ -1033,6 +1062,7 @@ fn property_split_contract_execution_conserves_balances() {
             &seller,
             &token,
             &amount,
+            &0,
             &(START_TS + 500),
             &CONFIRM_WINDOW,
             &DISPUTE_WINDOW,
@@ -1055,4 +1085,80 @@ fn property_split_contract_execution_conserves_balances() {
             (amount * 2) - amount + expected_buyer
         );
     }
+}
+
+// --- Dispute Bond Tests (Issue 4) ---
+
+#[test]
+fn dispute_with_bond_transfers_from_buyer_to_contract() {
+    let c = setup();
+    let bond = 200;
+    let id = c.create_with_bond(c.single(), bond);
+
+    c.client.fund(&id);
+    assert_eq!(c.token_client.balance(&c.buyer), 9_000);
+    assert_eq!(c.token_client.balance(&c.contract_id), AMOUNT);
+
+    c.client.mark_delivered(&id, &hash(&c.env, 2));
+    c.client.dispute(&id, &hash(&c.env, 3));
+
+    // Buyer posted the 200 bond upon dispute
+    assert_eq!(c.token_client.balance(&c.buyer), 9_000 - bond);
+    assert_eq!(c.token_client.balance(&c.contract_id), AMOUNT + bond);
+}
+
+#[test]
+fn dispute_bond_refunded_to_buyer_on_refund_verdict() {
+    let c = setup();
+    let bond = 200;
+    let id = c.create_with_bond(c.single(), bond);
+
+    c.client.fund(&id);
+    c.client.mark_delivered(&id, &hash(&c.env, 2));
+    c.client.dispute(&id, &hash(&c.env, 3));
+
+    // Resolve in buyer's favor: full amount + bond refunded
+    c.client.resolve(&id, &Verdict::RefundBuyer, &None, &None);
+
+    assert_eq!(c.token_client.balance(&c.contract_id), 0);
+    assert_eq!(c.token_client.balance(&c.buyer), 10_000);
+    assert_eq!(c.token_client.balance(&c.seller), 0);
+}
+
+#[test]
+fn dispute_bond_forfeited_to_seller_on_release_verdict() {
+    let c = setup();
+    let bond = 250;
+    let id = c.create_with_bond(c.single(), bond);
+
+    c.client.fund(&id);
+    c.client.mark_delivered(&id, &hash(&c.env, 2));
+    c.client.dispute(&id, &hash(&c.env, 3));
+
+    // Resolve in seller's favor: buyer forfeits bond, seller gets amount + bond
+    c.client.resolve(&id, &Verdict::ReleaseSeller, &None, &None);
+
+    assert_eq!(c.token_client.balance(&c.contract_id), 0);
+    assert_eq!(c.token_client.balance(&c.buyer), 10_000 - AMOUNT - bond);
+    assert_eq!(c.token_client.balance(&c.seller), AMOUNT + bond);
+}
+
+#[test]
+fn dispute_bond_split_proportionally_on_split_verdict() {
+    let c = setup();
+    let bond = 400;
+    let id = c.create_with_bond(c.single(), bond);
+
+    c.client.fund(&id);
+    c.client.mark_delivered(&id, &hash(&c.env, 2));
+    c.client.dispute(&id, &hash(&c.env, 3));
+
+    // Total funds in escrow: 1000 + 400 = 1400.
+    // 50% split (5000 bps)
+    c.client.resolve(&id, &Verdict::Split(5_000), &None, &None);
+
+    assert_eq!(c.token_client.balance(&c.contract_id), 0);
+    // Buyer gets back 700 of the 1400 they deposited (1000 principal + 400 bond)
+    assert_eq!(c.token_client.balance(&c.buyer), 10_000 - 1_400 + 700);
+    assert_eq!(c.token_client.balance(&c.seller), 700);
 }

@@ -42,6 +42,7 @@ impl EscrowContract {
         seller: Address,
         asset: Address,
         amount: i128,
+        dispute_bond: i128,
         deliver_by: u64,
         confirm_window: u64,
         dispute_window: u64,
@@ -50,7 +51,7 @@ impl EscrowContract {
     ) -> Result<u64, Error> {
         buyer.require_auth();
 
-        if amount <= 0 {
+        if amount <= 0 || dispute_bond < 0 {
             return Err(Error::InvalidAmount);
         }
         // A zero window is a footgun: it would let a seller claim the instant
@@ -84,6 +85,7 @@ impl EscrowContract {
             seller,
             asset,
             amount,
+            dispute_bond,
             deliver_by,
             confirm_window,
             dispute_window,
@@ -188,6 +190,10 @@ impl EscrowContract {
         if env.ledger().timestamp() > deadline {
             return Err(Error::DisputeWindowClosed);
         }
+        if e.dispute_bond > 0 {
+            let contract = env.current_contract_address();
+            token::TokenClient::new(&env, &e.asset).transfer(&e.buyer, &contract, &e.dispute_bond);
+        }
         e.reason_hash = reason_hash;
         e.state = State::Disputed;
         Self::put(&env, &e);
@@ -247,13 +253,18 @@ impl EscrowContract {
             }
         }
 
+        let total_amount = e
+            .amount
+            .checked_add(e.dispute_bond)
+            .ok_or(Error::Overflow)?;
+
         let new_state = match verdict {
             Verdict::RefundBuyer => {
-                Self::pay(&env, &e, &e.buyer, e.amount);
+                Self::pay(&env, &e, &e.buyer, total_amount);
                 State::ResolvedBuyer
             }
             Verdict::ReleaseSeller => {
-                Self::pay(&env, &e, &e.seller, e.amount);
+                Self::pay(&env, &e, &e.seller, total_amount);
                 State::ResolvedSeller
             }
             Verdict::Split(buyer_bps) => {
@@ -263,12 +274,13 @@ impl EscrowContract {
                 // Rounding direction: the buyer's share is floored, so the
                 // remaining stroop always goes to the seller. Documented in
                 // protocol.md so tests and reviewers agree on the odd-amount case.
-                let buyer_amount = e
-                    .amount
+                let buyer_amount = total_amount
                     .checked_mul(i128::from(buyer_bps))
                     .ok_or(Error::Overflow)?
                     / i128::from(BPS_DENOM);
-                let seller_amount = e.amount.checked_sub(buyer_amount).ok_or(Error::Overflow)?;
+                let seller_amount = total_amount
+                    .checked_sub(buyer_amount)
+                    .ok_or(Error::Overflow)?;
                 if buyer_amount > 0 {
                     Self::pay(&env, &e, &e.buyer, buyer_amount);
                 }

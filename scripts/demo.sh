@@ -63,7 +63,7 @@ show() {
 
 echo "=== Happy path ==="
 ID=$(invoke --source umbra-buyer -- create_escrow \
-  --buyer "$BUYER" --seller "$SELLER" --asset "$ASSET" --amount "$AMOUNT" \
+  --buyer "$BUYER" --seller "$SELLER" --asset "$ASSET" --amount "$AMOUNT" --dispute_bond 0 \
   --deliver_by 9999999999 --confirm_window "$CONFIRM_WINDOW" --dispute_window "$DISPUTE_WINDOW" \
   --arbiter '"None"' --terms_hash "$TERMS")
 echo "create_escrow -> id $ID"; show create "$ID"
@@ -80,7 +80,7 @@ echo
 
 echo "=== Dispute path ==="
 ID=$(invoke --source umbra-buyer -- create_escrow \
-  --buyer "$BUYER" --seller "$SELLER" --asset "$ASSET" --amount "$AMOUNT" \
+  --buyer "$BUYER" --seller "$SELLER" --asset "$ASSET" --amount "$AMOUNT" --dispute_bond 0 \
   --deliver_by 9999999999 --confirm_window "$CONFIRM_WINDOW" --dispute_window "$DISPUTE_WINDOW" \
   --arbiter "{\"Single\":\"$ARBITER\"}" --terms_hash "$TERMS")
 echo "create_escrow -> id $ID"; show create "$ID"

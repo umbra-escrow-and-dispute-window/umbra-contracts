@@ -50,6 +50,7 @@ pub struct Escrow {
     pub seller: Address,
     pub asset: Address,
     pub amount: i128,
+    pub dispute_bond: i128,
     pub deliver_by: u64,
     pub confirm_window: u64,
     pub dispute_window: u64,
