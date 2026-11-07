@@ -64,6 +64,19 @@ impl EscrowContract {
             return Err(Error::InvalidWindowOrdering);
         }
 
+        if let ArbiterConfig::Panel(members, threshold) = &arbiter {
+            if *threshold == 0 || *threshold > members.len() {
+                return Err(Error::InvalidThreshold);
+            }
+            for i in 0..members.len() {
+                for j in (i + 1)..members.len() {
+                    if members.get(i) == members.get(j) {
+                        return Err(Error::DuplicateSigner);
+                    }
+                }
+            }
+        }
+
         let id = Self::next_id(&env);
         let escrow = Escrow {
             id,
