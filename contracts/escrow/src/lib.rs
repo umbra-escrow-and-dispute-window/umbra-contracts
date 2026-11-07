@@ -10,7 +10,7 @@
 //! docs/protocol.md. Every transition below cites the table row it implements.
 
 mod error;
-mod events;
+pub mod events;
 mod types;
 
 pub use error::Error;

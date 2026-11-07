@@ -1,7 +1,8 @@
 #![cfg(test)]
 
 use soroban_sdk::{
-    testutils::{Address as _, Ledger, MockAuth, MockAuthInvoke},
+    symbol_short,
+    testutils::{Address as _, Events, Ledger, MockAuth, MockAuthInvoke},
     token::{StellarAssetClient, TokenClient},
     Address, BytesN, Env, IntoVal,
 };
@@ -560,4 +561,124 @@ fn resolve_by_non_arbiter_fails() {
         }])
         .try_resolve(&id, &Verdict::ReleaseSeller, &None);
     assert!(r.is_err());
+}
+
+// --- Event schema verification (docs/events.md) ---
+
+#[test]
+fn events_happy_path_matches_schema() {
+    use crate::events::Transition;
+    use soroban_sdk::events::Event as _;
+
+    let c = setup();
+    let id = c.create(ArbiterConfig::None);
+    assert_eq!(
+        c.env.events().all().filter_by_contract(&c.contract_id),
+        [Transition {
+            kind: symbol_short!("created"),
+            escrow: id,
+            state: State::Created,
+        }
+        .to_xdr(&c.env, &c.contract_id)]
+    );
+
+    c.client.fund(&id);
+    assert_eq!(
+        c.env.events().all().filter_by_contract(&c.contract_id),
+        [Transition {
+            kind: symbol_short!("funded"),
+            escrow: id,
+            state: State::Funded,
+        }
+        .to_xdr(&c.env, &c.contract_id)]
+    );
+
+    c.client.mark_delivered(&id, &hash(&c.env, 2));
+    assert_eq!(
+        c.env.events().all().filter_by_contract(&c.contract_id),
+        [Transition {
+            kind: symbol_short!("delivered"),
+            escrow: id,
+            state: State::Delivered,
+        }
+        .to_xdr(&c.env, &c.contract_id)]
+    );
+
+    c.client.confirm(&id);
+    assert_eq!(
+        c.env.events().all().filter_by_contract(&c.contract_id),
+        [Transition {
+            kind: symbol_short!("confirmed"),
+            escrow: id,
+            state: State::Released,
+        }
+        .to_xdr(&c.env, &c.contract_id)]
+    );
+}
+
+#[test]
+fn events_dispute_path_matches_schema() {
+    use crate::events::Transition;
+    use soroban_sdk::events::Event as _;
+
+    let c = setup();
+    let id = c.create(c.single());
+    c.client.fund(&id);
+    c.client.mark_delivered(&id, &hash(&c.env, 2));
+
+    c.client.dispute(&id, &hash(&c.env, 3));
+    assert_eq!(
+        c.env.events().all().filter_by_contract(&c.contract_id),
+        [Transition {
+            kind: symbol_short!("disputed"),
+            escrow: id,
+            state: State::Disputed,
+        }
+        .to_xdr(&c.env, &c.contract_id)]
+    );
+
+    c.client.resolve(&id, &Verdict::RefundBuyer, &None);
+    assert_eq!(
+        c.env.events().all().filter_by_contract(&c.contract_id),
+        [Transition {
+            kind: symbol_short!("resolved"),
+            escrow: id,
+            state: State::ResolvedBuyer,
+        }
+        .to_xdr(&c.env, &c.contract_id)]
+    );
+}
+
+#[test]
+fn events_cancel_and_timeout_paths_match_schema() {
+    use crate::events::Transition;
+    use soroban_sdk::events::Event as _;
+
+    let c = setup();
+    let id = c.create(ArbiterConfig::None);
+    c.client.cancel(&id, &c.buyer);
+    assert_eq!(
+        c.env.events().all().filter_by_contract(&c.contract_id),
+        [Transition {
+            kind: symbol_short!("cancelled"),
+            escrow: id,
+            state: State::Refunded,
+        }
+        .to_xdr(&c.env, &c.contract_id)]
+    );
+
+    let id2 = c.create(ArbiterConfig::None);
+    c.client.fund(&id2);
+    c.client.mark_delivered(&id2, &hash(&c.env, 2));
+    c.advance(CONFIRM_WINDOW + 1);
+    c.client.claim_timeout(&id2);
+    assert_eq!(
+        c.env.events().all().filter_by_contract(&c.contract_id),
+        [Transition {
+            kind: symbol_short!("timeout"),
+            escrow: id2,
+            state: State::Released,
+        }
+        .to_xdr(&c.env, &c.contract_id)]
+    );
 }
