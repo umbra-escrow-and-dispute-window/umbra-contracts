@@ -13,4 +13,5 @@ crate-type = ["cdylib", "rlib"]
 soroban-sdk = { workspace = true }
 
 [dev-dependencies]
+ed25519-dalek = { version = "2.2.0", default-features = false }
 soroban-sdk = { workspace = true, features = ["testutils"] }
