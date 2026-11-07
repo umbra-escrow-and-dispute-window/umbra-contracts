@@ -61,17 +61,12 @@ Acceptance: a documented mainnet deploy path gated behind an explicit flag, a
 release checklist in `docs`, and a README change that removes "Testnet-only" only
 when the maintainers decide. No mainnet deploy happens as part of this issue.
 
-## 7. Panel arbitration with threshold signatures
+## 7. Panel arbitration with threshold signatures (Resolved)
 Label: advanced
 
-`ArbiterConfig::Panel(members, threshold)` is declared but `resolve` returns
-`Unimplemented`. Implement resolution requiring `threshold` distinct member
-signatures (M7).
-
-Acceptance: `resolve` accepts a panel verdict when at least `threshold` members
-authorise; rejects below threshold and duplicate signers; legal- and
-illegal-path tests including the unauthorised variant; `docs/protocol.md` and
-`docs/threat-model.md` updated for the reduced arbiter-capture risk.
+Resolved: `ArbiterConfig::Panel(members, threshold)` enforces threshold requirements and
+rejects duplicate signers or unauthorized callers. Covered by legal- and illegal-path unit tests,
+and documented in `docs/protocol.md` and `docs/threat-model.md`.
 
 ## 8. Signed adjudicator verdicts
 Label: advanced
