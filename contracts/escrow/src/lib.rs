@@ -64,6 +64,19 @@ impl EscrowContract {
             return Err(Error::InvalidWindowOrdering);
         }
 
+        if let ArbiterConfig::Panel(members, threshold) = &arbiter {
+            if *threshold == 0 || *threshold > members.len() {
+                return Err(Error::InvalidThreshold);
+            }
+            for i in 0..members.len() {
+                for j in (i + 1)..members.len() {
+                    if members.get(i) == members.get(j) {
+                        return Err(Error::DuplicateSigner);
+                    }
+                }
+            }
+        }
+
         let id = Self::next_id(&env);
         let escrow = Escrow {
             id,
@@ -183,12 +196,14 @@ impl EscrowContract {
     }
 
     /// protocol.md T7. The escrow's arbiter resolves a dispute. `signature` is
-    /// reserved for the `Signed` adjudicator variant and unused in v0.1.
+    /// reserved for the `Signed` adjudicator variant, and `signers` supplies the
+    /// authorizing members for the `Panel` arbiter variant.
     pub fn resolve(
         env: Env,
         escrow_id: u64,
         verdict: Verdict,
         signature: Option<BytesN<64>>,
+        signers: Option<soroban_sdk::Vec<Address>>,
     ) -> Result<(), Error> {
         let _ = signature;
         let mut e = Self::load(&env, escrow_id)?;
@@ -197,12 +212,36 @@ impl EscrowContract {
         }
         match &e.arbiter {
             ArbiterConfig::Single(arbiter) => arbiter.require_auth(),
+            ArbiterConfig::Panel(members, threshold) => {
+                let signers = signers.ok_or(Error::BelowThreshold)?;
+                if signers.len() < *threshold {
+                    return Err(Error::BelowThreshold);
+                }
+                for i in 0..signers.len() {
+                    for j in (i + 1)..signers.len() {
+                        if signers.get(i) == signers.get(j) {
+                            return Err(Error::DuplicateSigner);
+                        }
+                    }
+                }
+                for signer in signers.iter() {
+                    let mut found = false;
+                    for member in members.iter() {
+                        if member == signer {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if !found {
+                        return Err(Error::NotAuthorized);
+                    }
+                    signer.require_auth();
+                }
+            }
             // Unreachable: `dispute()` rejects `ArbiterConfig::None`. Kept explicit
             // so a future edit to `dispute()` cannot silently open this path.
             ArbiterConfig::None => return Err(Error::ArbiterRequired),
-            ArbiterConfig::Panel(_, _) | ArbiterConfig::Signed(_) => {
-                return Err(Error::Unimplemented)
-            }
+            ArbiterConfig::Signed(_) => return Err(Error::Unimplemented),
         }
 
         let new_state = match verdict {
@@ -240,6 +279,16 @@ impl EscrowContract {
         Self::put(&env, &e);
         events::resolved(&env, escrow_id, new_state);
         Ok(())
+    }
+
+    /// Companion entry point for resolving disputes governed by `ArbiterConfig::Panel`.
+    pub fn resolve_panel(
+        env: Env,
+        escrow_id: u64,
+        verdict: Verdict,
+        signers: soroban_sdk::Vec<Address>,
+    ) -> Result<(), Error> {
+        Self::resolve(env, escrow_id, verdict, None, Some(signers))
     }
 
     /// protocol.md T8. Either party cancels before delivery. Any funds return

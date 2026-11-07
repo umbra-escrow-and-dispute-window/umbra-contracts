@@ -143,7 +143,7 @@ fn dispute_then_refund_buyer() {
     c.client.mark_delivered(&id, &hash(&c.env, 2));
     c.client.dispute(&id, &hash(&c.env, 3));
 
-    c.client.resolve(&id, &Verdict::RefundBuyer, &None);
+    c.client.resolve(&id, &Verdict::RefundBuyer, &None, &None);
 
     assert_eq!(
         c.client.get_escrow(&id).unwrap().state,
@@ -161,7 +161,7 @@ fn dispute_then_release_seller() {
     c.client.mark_delivered(&id, &hash(&c.env, 2));
     c.client.dispute(&id, &hash(&c.env, 3));
 
-    c.client.resolve(&id, &Verdict::ReleaseSeller, &None);
+    c.client.resolve(&id, &Verdict::ReleaseSeller, &None, &None);
 
     assert_eq!(
         c.client.get_escrow(&id).unwrap().state,
@@ -179,7 +179,7 @@ fn split_even_amount_distributes_exactly() {
     c.client.dispute(&id, &hash(&c.env, 3));
 
     // 40% to buyer, 60% to seller of 1000.
-    c.client.resolve(&id, &Verdict::Split(4_000), &None);
+    c.client.resolve(&id, &Verdict::Split(4_000), &None, &None);
 
     assert_eq!(
         c.client.get_escrow(&id).unwrap().state,
@@ -199,7 +199,7 @@ fn split_odd_amount_rounds_remainder_to_seller() {
     c.client.mark_delivered(&id, &hash(&c.env, 2));
     c.client.dispute(&id, &hash(&c.env, 3));
 
-    c.client.resolve(&id, &Verdict::Split(3_333), &None);
+    c.client.resolve(&id, &Verdict::Split(3_333), &None, &None);
 
     let buyer_share = 333;
     let seller_share = AMOUNT - buyer_share; // 667, remainder to seller
@@ -220,7 +220,8 @@ fn split_rejects_bps_over_denominator() {
     c.client.dispute(&id, &hash(&c.env, 3));
 
     assert_eq!(
-        c.client.try_resolve(&id, &Verdict::Split(10_001), &None),
+        c.client
+            .try_resolve(&id, &Verdict::Split(10_001), &None, &None),
         Err(Ok(Error::InvalidVerdict))
     );
 }
@@ -233,7 +234,7 @@ fn split_zero_bps_pays_entire_amount_to_seller() {
     c.client.mark_delivered(&id, &hash(&c.env, 2));
     c.client.dispute(&id, &hash(&c.env, 3));
 
-    c.client.resolve(&id, &Verdict::Split(0), &None);
+    c.client.resolve(&id, &Verdict::Split(0), &None, &None);
 
     assert_eq!(
         c.client.get_escrow(&id).unwrap().state,
@@ -252,7 +253,7 @@ fn split_full_bps_pays_entire_amount_to_buyer() {
     c.client.mark_delivered(&id, &hash(&c.env, 2));
     c.client.dispute(&id, &hash(&c.env, 3));
 
-    c.client.resolve(&id, &Verdict::Split(10_000), &None);
+    c.client.resolve(&id, &Verdict::Split(10_000), &None, &None);
 
     assert_eq!(
         c.client.get_escrow(&id).unwrap().state,
@@ -374,7 +375,8 @@ fn resolve_without_dispute_fails() {
     c.client.fund(&id);
     c.client.mark_delivered(&id, &hash(&c.env, 2));
     assert_eq!(
-        c.client.try_resolve(&id, &Verdict::ReleaseSeller, &None),
+        c.client
+            .try_resolve(&id, &Verdict::ReleaseSeller, &None, &None),
         Err(Ok(Error::InvalidState))
     );
 }
@@ -391,21 +393,182 @@ fn missing_escrow_call_fails() {
     assert_eq!(c.client.try_fund(&999), Err(Ok(Error::EscrowNotFound)));
 }
 
-// --- Unimplemented arbiter variants ---
+// --- Arbiter variants ---
 
 #[test]
-fn resolve_panel_arbiter_is_unimplemented() {
+fn resolve_panel_with_threshold_signatures_succeeds() {
     let c = setup();
-    let panel = soroban_sdk::vec![&c.env, c.arbiter.clone()];
-    let id = c.create(ArbiterConfig::Panel(panel, 1));
+    let m1 = Address::generate(&c.env);
+    let m2 = Address::generate(&c.env);
+    let m3 = Address::generate(&c.env);
+
+    let panel = soroban_sdk::vec![&c.env, m1.clone(), m2.clone(), m3.clone()];
+    let id = c.create(ArbiterConfig::Panel(panel, 2));
     c.client.fund(&id);
     c.client.mark_delivered(&id, &hash(&c.env, 2));
     c.client.dispute(&id, &hash(&c.env, 3));
 
+    // Threshold is 2 of 3. Authorize with m1 and m3.
+    let signers = soroban_sdk::vec![&c.env, m1.clone(), m3.clone()];
+    c.client
+        .resolve_panel(&id, &Verdict::ReleaseSeller, &signers);
+
     assert_eq!(
-        c.client.try_resolve(&id, &Verdict::ReleaseSeller, &None),
-        Err(Ok(Error::Unimplemented))
+        c.client.get_escrow(&id).unwrap().state,
+        State::ResolvedSeller
     );
+    assert_eq!(c.token_client.balance(&c.seller), AMOUNT);
+}
+
+#[test]
+fn resolve_panel_below_threshold_fails() {
+    let c = setup();
+    let m1 = Address::generate(&c.env);
+    let m2 = Address::generate(&c.env);
+
+    let panel = soroban_sdk::vec![&c.env, m1.clone(), m2.clone()];
+    let id = c.create(ArbiterConfig::Panel(panel, 2));
+    c.client.fund(&id);
+    c.client.mark_delivered(&id, &hash(&c.env, 2));
+    c.client.dispute(&id, &hash(&c.env, 3));
+
+    // Only 1 signer supplied when 2 required
+    let signers = soroban_sdk::vec![&c.env, m1];
+    assert_eq!(
+        c.client
+            .try_resolve_panel(&id, &Verdict::ReleaseSeller, &signers),
+        Err(Ok(Error::BelowThreshold))
+    );
+}
+
+#[test]
+fn resolve_panel_duplicate_signers_fails() {
+    let c = setup();
+    let m1 = Address::generate(&c.env);
+    let m2 = Address::generate(&c.env);
+
+    let panel = soroban_sdk::vec![&c.env, m1.clone(), m2];
+    let id = c.create(ArbiterConfig::Panel(panel, 2));
+    c.client.fund(&id);
+    c.client.mark_delivered(&id, &hash(&c.env, 2));
+    c.client.dispute(&id, &hash(&c.env, 3));
+
+    // Duplicate signer m1 repeated to fake threshold
+    let signers = soroban_sdk::vec![&c.env, m1.clone(), m1];
+    assert_eq!(
+        c.client
+            .try_resolve_panel(&id, &Verdict::ReleaseSeller, &signers),
+        Err(Ok(Error::DuplicateSigner))
+    );
+}
+
+#[test]
+fn resolve_panel_non_member_signer_fails() {
+    let c = setup();
+    let m1 = Address::generate(&c.env);
+    let m2 = Address::generate(&c.env);
+    let stranger = Address::generate(&c.env);
+
+    let panel = soroban_sdk::vec![&c.env, m1.clone(), m2];
+    let id = c.create(ArbiterConfig::Panel(panel, 2));
+    c.client.fund(&id);
+    c.client.mark_delivered(&id, &hash(&c.env, 2));
+    c.client.dispute(&id, &hash(&c.env, 3));
+
+    let signers = soroban_sdk::vec![&c.env, m1, stranger];
+    assert_eq!(
+        c.client
+            .try_resolve_panel(&id, &Verdict::ReleaseSeller, &signers),
+        Err(Ok(Error::NotAuthorized))
+    );
+}
+
+#[test]
+fn resolve_panel_unauthorized_member_signature_fails() {
+    let c = setup();
+    let m1 = Address::generate(&c.env);
+    let m2 = Address::generate(&c.env);
+
+    let panel = soroban_sdk::vec![&c.env, m1.clone(), m2.clone()];
+    let id = c.create(ArbiterConfig::Panel(panel, 2));
+    c.client.fund(&id);
+    c.client.mark_delivered(&id, &hash(&c.env, 2));
+    c.client.dispute(&id, &hash(&c.env, 3));
+
+    let signers = soroban_sdk::vec![&c.env, m1.clone(), m2.clone()];
+
+    // Only m1 authorizes; m2 signature is missing
+    let r = c
+        .client
+        .mock_auths(&[MockAuth {
+            address: &m1,
+            invoke: &MockAuthInvoke {
+                contract: &c.contract_id,
+                fn_name: "resolve",
+                args: (
+                    id,
+                    Verdict::ReleaseSeller,
+                    None::<BytesN<64>>,
+                    Some(signers.clone()),
+                )
+                    .into_val(&c.env),
+                sub_invokes: &[],
+            },
+        }])
+        .try_resolve_panel(&id, &Verdict::ReleaseSeller, &signers);
+    assert!(r.is_err());
+}
+
+#[test]
+fn create_panel_rejects_invalid_threshold_or_duplicate_members() {
+    let c = setup();
+    let m1 = Address::generate(&c.env);
+    let m2 = Address::generate(&c.env);
+
+    // Threshold 0 rejected
+    let panel = soroban_sdk::vec![&c.env, m1.clone(), m2.clone()];
+    let r0 = c.client.try_create_escrow(
+        &c.buyer,
+        &c.seller,
+        &c.token,
+        &AMOUNT,
+        &(START_TS + 500),
+        &CONFIRM_WINDOW,
+        &DISPUTE_WINDOW,
+        &ArbiterConfig::Panel(panel, 0),
+        &hash(&c.env, 1),
+    );
+    assert_eq!(r0, Err(Ok(Error::InvalidThreshold)));
+
+    // Threshold > len rejected
+    let panel2 = soroban_sdk::vec![&c.env, m1.clone(), m2.clone()];
+    let r_too_high = c.client.try_create_escrow(
+        &c.buyer,
+        &c.seller,
+        &c.token,
+        &AMOUNT,
+        &(START_TS + 500),
+        &CONFIRM_WINDOW,
+        &DISPUTE_WINDOW,
+        &ArbiterConfig::Panel(panel2, 3),
+        &hash(&c.env, 1),
+    );
+    assert_eq!(r_too_high, Err(Ok(Error::InvalidThreshold)));
+
+    // Duplicate member in panel config rejected
+    let panel_dup = soroban_sdk::vec![&c.env, m1.clone(), m1];
+    let r_dup = c.client.try_create_escrow(
+        &c.buyer,
+        &c.seller,
+        &c.token,
+        &AMOUNT,
+        &(START_TS + 500),
+        &CONFIRM_WINDOW,
+        &DISPUTE_WINDOW,
+        &ArbiterConfig::Panel(panel_dup, 2),
+        &hash(&c.env, 1),
+    );
+    assert_eq!(r_dup, Err(Ok(Error::DuplicateSigner)));
 }
 
 #[test]
@@ -417,7 +580,8 @@ fn resolve_signed_arbiter_is_unimplemented() {
     c.client.dispute(&id, &hash(&c.env, 3));
 
     assert_eq!(
-        c.client.try_resolve(&id, &Verdict::RefundBuyer, &None),
+        c.client
+            .try_resolve(&id, &Verdict::RefundBuyer, &None, &None),
         Err(Ok(Error::Unimplemented))
     );
 }
@@ -555,11 +719,17 @@ fn resolve_by_non_arbiter_fails() {
             invoke: &MockAuthInvoke {
                 contract: &c.contract_id,
                 fn_name: "resolve",
-                args: (id, Verdict::ReleaseSeller, None::<BytesN<64>>).into_val(&c.env),
+                args: (
+                    id,
+                    Verdict::ReleaseSeller,
+                    None::<BytesN<64>>,
+                    None::<soroban_sdk::Vec<Address>>,
+                )
+                    .into_val(&c.env),
                 sub_invokes: &[],
             },
         }])
-        .try_resolve(&id, &Verdict::ReleaseSeller, &None);
+        .try_resolve(&id, &Verdict::ReleaseSeller, &None, &None);
     assert!(r.is_err());
 }
 
@@ -637,7 +807,7 @@ fn events_dispute_path_matches_schema() {
         .to_xdr(&c.env, &c.contract_id)]
     );
 
-    c.client.resolve(&id, &Verdict::RefundBuyer, &None);
+    c.client.resolve(&id, &Verdict::RefundBuyer, &None, &None);
     assert_eq!(
         c.env.events().all().filter_by_contract(&c.contract_id),
         [Transition {
@@ -785,7 +955,7 @@ fn property_split_contract_execution_conserves_balances() {
         client.fund(&id);
         client.mark_delivered(&id, &hash(&env, 2));
         client.dispute(&id, &hash(&env, 3));
-        client.resolve(&id, &Verdict::Split(bps), &None);
+        client.resolve(&id, &Verdict::Split(bps), &None, &None);
 
         let expected_buyer = amount * i128::from(bps) / 10_000;
         let expected_seller = amount - expected_buyer;
