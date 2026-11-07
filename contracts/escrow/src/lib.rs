@@ -10,7 +10,7 @@
 //! docs/protocol.md. Every transition below cites the table row it implements.
 
 mod error;
-mod events;
+pub mod events;
 mod types;
 
 pub use error::Error;
@@ -57,6 +57,11 @@ impl EscrowContract {
         // after delivery, or leave no room to dispute. Reject both.
         if confirm_window == 0 || dispute_window == 0 {
             return Err(Error::InvalidWindow);
+        }
+        // A confirm window shorter than the dispute window is a footgun:
+        // it would let a seller claim payment while the dispute window remains open.
+        if confirm_window < dispute_window {
+            return Err(Error::InvalidWindowOrdering);
         }
 
         let id = Self::next_id(&env);

@@ -11,37 +11,26 @@ PRD.
 
 ---
 
-## 1. Warn on a confirm window shorter than the dispute window
+## 1. Warn on a confirm window shorter than the dispute window (Resolved)
 Label: good first issue
 
-`create_escrow` accepts any positive windows, but a `confirm_window` shorter than
-`dispute_window` lets a seller claim payment while the buyer could still dispute
-(`docs/threat-model.md`, "Timeout races"). The contract should not silently allow
-the footgun.
+Resolved: `create_escrow` enforces `confirm_window >= dispute_window` and returns
+`Error::InvalidWindowOrdering` (code 12) if violated. Covered by tests and documented in
+`docs/protocol.md`.
 
-Acceptance: `create_escrow` returns a distinct, documented error when
-`confirm_window < dispute_window`, or a design note in `docs/protocol.md` argues
-why it is allowed and the SDK carries the warning instead. A test covers the
-chosen behaviour.
-
-## 2. Document and test the event schema for indexers
+## 2. Document and test the event schema for indexers (Resolved)
 Label: good first issue
 
-Every transition emits a `Transition` event, but there is no consumer-facing
-description of the topic and data layout.
+Resolved: `docs/events.md` documents all transition event topics and data layouts.
+Integration tests in `contracts/escrow/src/test.rs` assert event emissions across
+happy, dispute, timeout, and cancellation paths.
 
-Acceptance: `docs/events.md` describes each event's topics and data; a test asserts
-the emitted events for a full happy path and a full dispute path match the doc.
-
-## 3. Property tests for split rounding
+## 3. Property tests for split rounding (Resolved)
 Label: intermediate
 
-The split verdict floors the buyer's share and gives the remainder to the seller.
-Only two example amounts are tested.
-
-Acceptance: a property test asserts, for a range of amounts and `buyer_bps`, that
-`buyer_share + seller_share == amount` and `buyer_share == amount * buyer_bps /
-10000`, with no panics. Reference `docs/protocol.md`, "Verdicts and rounding".
+Resolved: `property_split_rounding_invariants_hold_across_ranges` and
+`property_split_contract_execution_conserves_balances` assert invariant preservation
+across wide amount and basis point ranges without panics.
 
 ## 4. Dispute bond to deter griefing
 Label: intermediate
