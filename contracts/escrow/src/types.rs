@@ -17,10 +17,9 @@ pub enum State {
     ResolvedSplit = 8,
 }
 
-/// Who may resolve a dispute. `Panel` and `Signed` are declared so the storage
-/// layout and the interface are stable when panel arbitration and the signed
-/// adjudicator land; v0.1 implements only `None` and `Single` and returns
-/// `Unimplemented` for the rest at resolve time.
+/// Who may resolve a dispute. Supports timeout-only (`None`), a single named
+/// arbiter (`Single`), an M-of-N threshold panel (`Panel`), or an off-chain
+/// Ed25519 signed adjudicator (`Signed`).
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ArbiterConfig {
