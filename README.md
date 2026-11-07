@@ -17,13 +17,39 @@ Dependencies point one way: protocol, then SDK, then application. See
 
 ## Status
 
-Unaudited and Testnet-only. Do not deploy to mainnet. The contract implements the
-full escrow state machine with single-arbiter resolution. The collateral vault,
-the `UMBR` receipt asset, and clawback settlement are not built yet; they are
-filed in `ISSUES.md`. Until they land, a payment can only be reversed before it is
-released, because the contract still holds the funds. What clawback will and will
-not do is described in `docs/threat-model.md`, and it is deliberately narrow: only
-Umbra's own receipt asset, only inside the agreed window, always opt-in.
+Unaudited and Testnet-only. Mainnet promotion is gated behind `docs/mainnet-checklist.md`
+and `scripts/deploy_mainnet.sh` (`ALLOW_MAINNET=1`).
+
+The contract implements the full escrow state machine with:
+
+- **Arbitration modes**: Single named arbiter (`Single`), multi-party M-of-N threshold
+  panel (`Panel`), off-chain Ed25519 signed adjudicator (`Signed`), and timeout-only (`None`).
+- **Dispute bonds**: Optional per-escrow `dispute_bond` posted by the buyer on `dispute`,
+  refunded on `RefundBuyer`, forfeited to the seller on `ReleaseSeller`, or apportioned on `Split(bps)`.
+- **Window safety**: Enforces `confirm_window >= dispute_window` at creation to prevent timeout races.
+- **Indexer & Astrolabe events**: Emits structured `Transition` events on every transition and
+  `AttestationRecord` events on every terminal outcome (`docs/events.md`).
+
+The collateral vault, the `UMBR` receipt asset, and post-release clawback settlement
+are tracked on the roadmap in `ISSUES.md` (Issues 9 and 10). Until they land, a payment
+can only be reversed before it is released, while the contract still holds the funds.
+What clawback will and will not do is described in `docs/threat-model.md`, and it is
+deliberately narrow: only Umbra's own receipt asset, only inside the agreed window,
+always opt-in.
+
+## Protocol Capabilities
+
+| Feature | Entry Point / Config | Description |
+|---------|----------------------|-------------|
+| Escrow Creation | `create_escrow` | Registers terms, windows, `dispute_bond`, and `ArbiterConfig`. |
+| Funding | `fund` | Transfers `amount` of `asset` from buyer to contract. |
+| Delivery Proof | `mark_delivered` | Seller records 32-byte `proof_hash` and starts both windows. |
+| Buyer Release | `confirm` | Buyer releases funds to seller immediately. |
+| Timeout Release | `claim_timeout` | Seller claims funds once `delivered_at + confirm_window` elapses. |
+| Dispute Filing | `dispute` | Buyer files `reason_hash` inside `dispute_window` and posts `dispute_bond`. |
+| Resolution | `resolve` / `resolve_panel` / `resolve_signed` | Distributes principal and bond per `RefundBuyer`, `ReleaseSeller`, or `Split(bps)`. |
+| Cancellation | `cancel` | Either party cancels before delivery; refunds buyer if funded. |
+| TTL Extension | `extend_escrow_ttl` | Extends persistent and instance storage TTL for long-lived agreements. |
 
 ## The state machine
 
@@ -118,17 +144,20 @@ contracts/escrow/src/
   lib.rs        Contract entry points, one per transition
   types.rs      Escrow, State, ArbiterConfig, Verdict, storage keys
   error.rs      Typed error codes (stable; do not renumber)
-  events.rs     One event per transition
-  test.rs       Every legal and illegal transition, plus unauthorised paths
+  events.rs     Transition and Astrolabe terminal attestation events
+  test.rs       Legal, illegal, unauthorised, property, and concurrency tests
 docs/
-  protocol.md       Normative state machine and error codes
-  threat-model.md   Arbiter capture, griefing, timeout races, clawback limits
-  multi-repo.md     Cross-repository contract (shared across all three repos)
+  protocol.md           Normative state machine and error codes
+  events.md             Event schema for indexers and Astrolabe attestations
+  threat-model.md       Arbiter capture, griefing, timeout races, clawback limits
+  mainnet-checklist.md  Pre-deployment audit and release gate for Mainnet
+  multi-repo.md         Cross-repository contract (shared across all three repos)
 scripts/
-  deploy_testnet.sh Build, deploy, write deployments/testnet.json
-  demo.sh           Full happy and dispute paths against Testnet
+  deploy_testnet.sh     Build, deploy, write deployments/testnet.json
+  deploy_mainnet.sh     Flag-gated Mainnet deploy script
+  demo.sh               Full happy and dispute paths against Testnet
 deployments/
-  testnet.json      Deployment truth vendored by the SDK
+  testnet.json          Deployment truth vendored by the SDK
 ```
 
 ## Contributing
