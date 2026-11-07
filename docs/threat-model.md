@@ -37,9 +37,10 @@ resolves. Mitigations:
   serial disputer builds a visible record.
 - `dispute` is only legal inside the dispute window and only in `Delivered`, so a
   buyer cannot dispute before delivery or reopen a settled escrow.
-
-Residual risk: there is no bond required to dispute in v0.1, so disputing is
-cheap. A dispute bond is a candidate mitigation and is left as an open issue.
+- Escrows can configure a `dispute_bond` posted by the buyer upon initiating a dispute.
+  If the arbiter finds against the buyer (`ReleaseSeller`), the bond is forfeited to
+  the seller as compensation for capital lockup. If the buyer is upheld (`RefundBuyer`),
+  the bond is refunded. On `Split(bps)`, the bond is apportioned along with the principal.
 
 ## Timeout races
 

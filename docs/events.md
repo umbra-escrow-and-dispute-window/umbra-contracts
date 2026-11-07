@@ -78,3 +78,39 @@ Filter topics: `["umbra", "disputed", *]`
 
 ### 3. Track All Terminal Resolutions
 Filter topics: `["umbra", "resolved", *]`
+
+---
+
+## Astrolabe Terminal Attestations
+
+On reaching any terminal state (`Released`, `Refunded`, `ResolvedBuyer`, `ResolvedSeller`, `ResolvedSplit`), the contract publishes an `AttestationRecord` event under the `"astrolabe"` namespace to enable decentralized ranking and dispute-rate indexing:
+
+```rust
+#[contractevent(topics = ["astrolabe", "record"])]
+pub struct AttestationRecord {
+    #[topic]
+    pub escrow: u64,
+    pub buyer: Address,
+    pub seller: Address,
+    pub outcome: State,
+    pub amount_bucket: u32,
+}
+```
+
+### Topics Layout
+
+| Topic Index | Field | Type | Description |
+|---|---|---|---|
+| 0 | Namespace | `Symbol` | Always `"astrolabe"`. |
+| 1 | Topic | `Symbol` | Always `"record"`. |
+| 2 | `escrow` | `u64` | Numeric escrow ID. |
+
+### Data Payload
+
+| Field | Type | Description |
+|---|---|---|
+| `buyer` | `Address` | Buyer address. |
+| `seller` | `Address` | Seller address. |
+| `outcome` | `State` | The terminal outcome state. |
+| `amount_bucket` | `u32` | Logarithmic bucket for volume ranking (`0` = `<10`, `1` = `10..100`, `2` = `100..1K`, `3` = `1K..10K`, `4` = `>10K`). |
+

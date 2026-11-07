@@ -42,6 +42,7 @@ impl EscrowContract {
         seller: Address,
         asset: Address,
         amount: i128,
+        dispute_bond: i128,
         deliver_by: u64,
         confirm_window: u64,
         dispute_window: u64,
@@ -50,7 +51,7 @@ impl EscrowContract {
     ) -> Result<u64, Error> {
         buyer.require_auth();
 
-        if amount <= 0 {
+        if amount <= 0 || dispute_bond < 0 {
             return Err(Error::InvalidAmount);
         }
         // A zero window is a footgun: it would let a seller claim the instant
@@ -84,6 +85,7 @@ impl EscrowContract {
             seller,
             asset,
             amount,
+            dispute_bond,
             deliver_by,
             confirm_window,
             dispute_window,
@@ -144,6 +146,14 @@ impl EscrowContract {
         e.state = State::Released;
         Self::put(&env, &e);
         events::confirmed(&env, escrow_id);
+        events::attestation(
+            &env,
+            escrow_id,
+            e.buyer.clone(),
+            e.seller.clone(),
+            State::Released,
+            e.amount,
+        );
         Ok(())
     }
 
@@ -166,6 +176,14 @@ impl EscrowContract {
         e.state = State::Released;
         Self::put(&env, &e);
         events::timed_out(&env, escrow_id);
+        events::attestation(
+            &env,
+            escrow_id,
+            e.buyer.clone(),
+            e.seller.clone(),
+            State::Released,
+            e.amount,
+        );
         Ok(())
     }
 
@@ -188,6 +206,10 @@ impl EscrowContract {
         if env.ledger().timestamp() > deadline {
             return Err(Error::DisputeWindowClosed);
         }
+        if e.dispute_bond > 0 {
+            let contract = env.current_contract_address();
+            token::TokenClient::new(&env, &e.asset).transfer(&e.buyer, &contract, &e.dispute_bond);
+        }
         e.reason_hash = reason_hash;
         e.state = State::Disputed;
         Self::put(&env, &e);
@@ -196,7 +218,7 @@ impl EscrowContract {
     }
 
     /// protocol.md T7. The escrow's arbiter resolves a dispute. `signature` is
-    /// reserved for the `Signed` adjudicator variant, and `signers` supplies the
+    /// used for the `Signed` adjudicator variant, and `signers` supplies the
     /// authorizing members for the `Panel` arbiter variant.
     pub fn resolve(
         env: Env,
@@ -205,7 +227,6 @@ impl EscrowContract {
         signature: Option<BytesN<64>>,
         signers: Option<soroban_sdk::Vec<Address>>,
     ) -> Result<(), Error> {
-        let _ = signature;
         let mut e = Self::load(&env, escrow_id)?;
         if e.state != State::Disputed {
             return Err(Error::InvalidState);
@@ -241,16 +262,25 @@ impl EscrowContract {
             // Unreachable: `dispute()` rejects `ArbiterConfig::None`. Kept explicit
             // so a future edit to `dispute()` cannot silently open this path.
             ArbiterConfig::None => return Err(Error::ArbiterRequired),
-            ArbiterConfig::Signed(_) => return Err(Error::Unimplemented),
+            ArbiterConfig::Signed(public_key) => {
+                let sig = signature.ok_or(Error::NotAuthorized)?;
+                let payload = Self::signed_verdict_payload(&env, escrow_id, &verdict);
+                env.crypto().ed25519_verify(public_key, &payload, &sig);
+            }
         }
+
+        let total_amount = e
+            .amount
+            .checked_add(e.dispute_bond)
+            .ok_or(Error::Overflow)?;
 
         let new_state = match verdict {
             Verdict::RefundBuyer => {
-                Self::pay(&env, &e, &e.buyer, e.amount);
+                Self::pay(&env, &e, &e.buyer, total_amount);
                 State::ResolvedBuyer
             }
             Verdict::ReleaseSeller => {
-                Self::pay(&env, &e, &e.seller, e.amount);
+                Self::pay(&env, &e, &e.seller, total_amount);
                 State::ResolvedSeller
             }
             Verdict::Split(buyer_bps) => {
@@ -260,12 +290,13 @@ impl EscrowContract {
                 // Rounding direction: the buyer's share is floored, so the
                 // remaining stroop always goes to the seller. Documented in
                 // protocol.md so tests and reviewers agree on the odd-amount case.
-                let buyer_amount = e
-                    .amount
+                let buyer_amount = total_amount
                     .checked_mul(i128::from(buyer_bps))
                     .ok_or(Error::Overflow)?
                     / i128::from(BPS_DENOM);
-                let seller_amount = e.amount.checked_sub(buyer_amount).ok_or(Error::Overflow)?;
+                let seller_amount = total_amount
+                    .checked_sub(buyer_amount)
+                    .ok_or(Error::Overflow)?;
                 if buyer_amount > 0 {
                     Self::pay(&env, &e, &e.buyer, buyer_amount);
                 }
@@ -278,6 +309,14 @@ impl EscrowContract {
         e.state = new_state;
         Self::put(&env, &e);
         events::resolved(&env, escrow_id, new_state);
+        events::attestation(
+            &env,
+            escrow_id,
+            e.buyer.clone(),
+            e.seller.clone(),
+            new_state,
+            e.amount,
+        );
         Ok(())
     }
 
@@ -289,6 +328,42 @@ impl EscrowContract {
         signers: soroban_sdk::Vec<Address>,
     ) -> Result<(), Error> {
         Self::resolve(env, escrow_id, verdict, None, Some(signers))
+    }
+
+    /// Companion entry point for resolving disputes governed by `ArbiterConfig::Signed`.
+    pub fn resolve_signed(
+        env: Env,
+        escrow_id: u64,
+        verdict: Verdict,
+        signature: BytesN<64>,
+    ) -> Result<(), Error> {
+        Self::resolve(env, escrow_id, verdict, Some(signature), None)
+    }
+
+    /// Canonical payload for signed adjudicator verdicts (32 bytes).
+    pub fn signed_verdict_payload(
+        env: &Env,
+        escrow_id: u64,
+        verdict: &Verdict,
+    ) -> soroban_sdk::Bytes {
+        let mut payload = soroban_sdk::Bytes::new(env);
+        payload.extend_from_array(b"umbra:adjudicate:v1");
+        payload.extend_from_array(&escrow_id.to_be_bytes());
+        match verdict {
+            Verdict::RefundBuyer => {
+                payload.push_back(0);
+                payload.extend_from_array(&0u32.to_be_bytes());
+            }
+            Verdict::ReleaseSeller => {
+                payload.push_back(1);
+                payload.extend_from_array(&0u32.to_be_bytes());
+            }
+            Verdict::Split(bps) => {
+                payload.push_back(2);
+                payload.extend_from_array(&bps.to_be_bytes());
+            }
+        }
+        payload
     }
 
     /// protocol.md T8. Either party cancels before delivery. Any funds return
@@ -308,6 +383,14 @@ impl EscrowContract {
         e.state = State::Refunded;
         Self::put(&env, &e);
         events::cancelled(&env, escrow_id);
+        events::attestation(
+            &env,
+            escrow_id,
+            e.buyer.clone(),
+            e.seller.clone(),
+            State::Refunded,
+            e.amount,
+        );
         Ok(())
     }
 

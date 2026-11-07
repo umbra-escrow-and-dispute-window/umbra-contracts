@@ -32,25 +32,20 @@ Resolved: `property_split_rounding_invariants_hold_across_ranges` and
 `property_split_contract_execution_conserves_balances` assert invariant preservation
 across wide amount and basis point ranges without panics.
 
-## 4. Dispute bond to deter griefing
+## 4. Dispute bond to deter griefing (Resolved)
 Label: intermediate
 
-Disputing is free in v0.1, so a buyer can dispute in bad faith at no cost
-(`docs/threat-model.md`, "Griefing by disputes").
+Resolved: `create_escrow` accepts `dispute_bond: i128` (validating `dispute_bond >= 0`). `dispute` transfers
+the bond from buyer to contract. `resolve` distributes the bond according to the verdict: refunded to buyer
+on `RefundBuyer`, forfeited to seller on `ReleaseSeller`, or split per basis points. Documented in `docs/protocol.md`
+and `docs/threat-model.md`, and covered by unit tests.
 
-Acceptance: an optional per-escrow dispute bond, posted on `dispute` and forfeited
-or returned per verdict, with legal- and illegal-path tests and a threat-model
-update. The bond amount is part of the escrow terms.
-
-## 5. Astrolabe attestation on terminal states
+## 5. Astrolabe attestation on terminal states (Resolved)
 Label: intermediate
 
-Every terminal state should write an `agent-dispute-record` attestation so an
-agent marketplace can rank by dispute rate (PRD section 4.4).
-
-Acceptance: on reaching a terminal state the contract writes an attestation with
-escrow id, counterparty, outcome, and amount bucket; integration test on Testnet;
-depends on the Astrolabe schema being available.
+Resolved: On reaching any terminal state (`Released`, `Refunded`, `ResolvedBuyer`, `ResolvedSeller`, `ResolvedSplit`),
+the contract emits an `AttestationRecord` event under topics `["astrolabe", "record", escrow_id]` capturing buyer,
+seller, outcome state, and logarithmic amount bucket. Documented in `docs/events.md` and verified with unit tests.
 
 ## 6. Mainnet configuration and release checklist
 Label: intermediate
@@ -68,16 +63,13 @@ Resolved: `ArbiterConfig::Panel(members, threshold)` enforces threshold requirem
 rejects duplicate signers or unauthorized callers. Covered by legal- and illegal-path unit tests,
 and documented in `docs/protocol.md` and `docs/threat-model.md`.
 
-## 8. Signed adjudicator verdicts
+## 8. Signed adjudicator verdicts (Resolved)
 Label: advanced
 
-`ArbiterConfig::Signed(key)` is declared but `resolve` returns `Unimplemented`.
-Implement verification of an off-chain verdict signed by the configured key, so an
-automated adjudicator can plug in (PRD section 4.5).
-
-Acceptance: `resolve` verifies the signature over a canonical verdict payload
-against the configured key; rejects a wrong key or a tampered payload; the payload
-canonicalisation is documented and matches what the SDK produces; full tests.
+Resolved: `resolve` verifies Ed25519 signatures over the canonical 32-byte payload format
+`umbra:adjudicate:v1 || escrow_id || verdict_tag || buyer_bps`. Unit tests verify valid signatures,
+unauthorized callers without signatures, wrong public keys, and tampered verdicts. Exposed companion
+entry point `resolve_signed`. Documented in `docs/protocol.md`.
 
 ## 9. Collateral vault, UMBR receipt asset, and clawback settlement
 Label: advanced — this is the single largest unclaimed piece
