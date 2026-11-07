@@ -47,14 +47,12 @@ Resolved: On reaching any terminal state (`Released`, `Refunded`, `ResolvedBuyer
 the contract emits an `AttestationRecord` event under topics `["astrolabe", "record", escrow_id]` capturing buyer,
 seller, outcome state, and logarithmic amount bucket. Documented in `docs/events.md` and verified with unit tests.
 
-## 6. Mainnet configuration and release checklist
+## 6. Mainnet configuration and release checklist (Resolved)
 Label: intermediate
 
-The repository is Testnet-only. Mainnet needs a deliberate, reviewed switch.
-
-Acceptance: a documented mainnet deploy path gated behind an explicit flag, a
-release checklist in `docs`, and a README change that removes "Testnet-only" only
-when the maintainers decide. No mainnet deploy happens as part of this issue.
+Resolved: Authored `docs/mainnet-checklist.md` detailing pre-deployment audit, reproducibility, key management,
+and cross-repo sync steps, and added `scripts/deploy_mainnet.sh` gated behind `ALLOW_MAINNET=1` and
+`CONFIRM_MAINNET_CHECKLIST=1`.
 
 ## 7. Panel arbitration with threshold signatures (Resolved)
 Label: advanced
