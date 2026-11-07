@@ -84,8 +84,13 @@ wrapping.
 - `Single(Address)` — one named arbiter. Implemented.
 - `Panel(Vec<Address>, threshold)` — multi-party panel arbitration. Implemented. Requires at least `threshold` distinct member signatures.
 - `Signed(BytesN<32>)` — an off-chain signed verdict from a known key, for the
-  automated adjudicator. Declared, not implemented. `resolve` returns
-  `Unimplemented`.
+  automated adjudicator. Requires `signature: Option<BytesN<64>>` containing an
+  Ed25519 signature over the canonical 32-byte payload:
+  - Bytes 0..19: domain prefix `umbra:adjudicate:v1`
+  - Bytes 19..27: `escrow_id` as u64 big-endian
+  - Byte 27: verdict code (`0` = `RefundBuyer`, `1` = `ReleaseSeller`, `2` = `Split`)
+  - Bytes 28..32: `buyer_bps` as u32 big-endian (`0` for non-split verdicts)
+  A companion entry point `resolve_signed` is provided.
 
 The `Panel` and `Signed` variants exist in the type and the storage layout now so
 that adding them later is not a breaking change.
@@ -116,8 +121,8 @@ that adding them later is not a breaking change.
   Authenticating "either party" requires knowing which party is calling; the extra
   argument is that party, and it is authenticated and checked against the escrow.
 - `resolve` takes `signers: Option<Vec<Address>>` for `Panel` arbitration and
-  `signature: Option<BytesN<64>>` for `Signed` adjudicators. A companion entry point
-  `resolve_panel` is also provided.
+  `signature: Option<BytesN<64>>` for `Signed` adjudicators. Companion entry points
+  `resolve_panel` and `resolve_signed` are also provided.
 
 ## Events
 
