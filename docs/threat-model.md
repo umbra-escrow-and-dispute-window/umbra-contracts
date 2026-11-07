@@ -27,6 +27,10 @@ arbiter is the largest single risk. Mitigations in v0.1:
 - Every resolution emits an event, so verdicts are public and attributable.
 - Panel arbitration (`ArbiterConfig::Panel(members, threshold)`) requires `threshold`
   distinct member signatures to resolve, eliminating any single arbiter as a single point of failure.
+- Signed adjudication (`ArbiterConfig::Signed(public_key)`) verifies an Ed25519 signature over the
+  domain-separated payload (`umbra:adjudicate:v1 || escrow_id || verdict_tag || buyer_bps`), binding
+  each signed verdict to a specific `escrow_id` and outcome so signatures cannot be forged or replayed
+  across escrows.
 
 ## Griefing by disputes
 

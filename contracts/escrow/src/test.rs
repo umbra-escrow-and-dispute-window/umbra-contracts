@@ -682,6 +682,46 @@ fn resolve_signed_with_tampered_payload_fails() {
     assert!(r.is_err());
 }
 
+#[test]
+fn resolve_signed_replay_across_escrows_fails() {
+    use ed25519_dalek::{Signer, SigningKey};
+
+    let c = setup();
+    let signing_key = SigningKey::from_bytes(&[42u8; 32]);
+    let pubkey_bytes: BytesN<32> =
+        BytesN::from_array(&c.env, &signing_key.verifying_key().to_bytes());
+
+    let id1 = c.create(ArbiterConfig::Signed(pubkey_bytes.clone()));
+    let id2 = c.create(ArbiterConfig::Signed(pubkey_bytes));
+
+    c.client.fund(&id1);
+    c.client.mark_delivered(&id1, &hash(&c.env, 2));
+    c.client.dispute(&id1, &hash(&c.env, 3));
+
+    c.client.fund(&id2);
+    c.client.mark_delivered(&id2, &hash(&c.env, 2));
+    c.client.dispute(&id2, &hash(&c.env, 3));
+
+    // Sign valid verdict for escrow id1
+    let verdict = Verdict::RefundBuyer;
+    let payload1 = EscrowContract::signed_verdict_payload(&c.env, id1, &verdict);
+    let mut raw_payload1 = [0u8; 32];
+    payload1.copy_into_slice(&mut raw_payload1);
+    let sig1 = signing_key.sign(&raw_payload1);
+    let sig1_bytes: BytesN<64> = BytesN::from_array(&c.env, &sig1.to_bytes());
+
+    // Attempting to replay id1's signature on id2 fails verification
+    let r_replay = c.client.try_resolve_signed(&id2, &verdict, &sig1_bytes);
+    assert!(r_replay.is_err());
+
+    // Resolving id1 with its own signature succeeds
+    c.client.resolve_signed(&id1, &verdict, &sig1_bytes);
+    assert_eq!(
+        c.client.get_escrow(&id1).unwrap().state,
+        State::ResolvedBuyer
+    );
+}
+
 // --- Validation at creation ---
 
 #[test]
@@ -1216,4 +1256,114 @@ fn astrolabe_attestation_buckets_match_spec() {
     assert_eq!(compute_amount_bucket(10_000_000_001), 3);
     assert_eq!(compute_amount_bucket(100_000_000_000), 3);
     assert_eq!(compute_amount_bucket(100_000_000_001), 4);
+}
+
+// --- Hardening & Edge Case Tests ---
+
+#[test]
+fn extend_escrow_ttl_succeeds_for_existing_and_fails_for_missing() {
+    let c = setup();
+    let id = c.create(ArbiterConfig::None);
+
+    c.client.extend_escrow_ttl(&id);
+
+    assert_eq!(
+        c.client.try_extend_escrow_ttl(&999),
+        Err(Ok(Error::EscrowNotFound))
+    );
+}
+
+#[test]
+fn multiple_concurrent_escrows_isolate_state_and_funds() {
+    let c = setup();
+    let id1 = c.create(c.single());
+    let id2 = c.create(c.single());
+    let id3 = c.create_with_bond(c.single(), 200);
+
+    assert_eq!(id1, 1);
+    assert_eq!(id2, 2);
+    assert_eq!(id3, 3);
+
+    c.client.fund(&id1);
+    c.client.fund(&id2);
+    c.client.fund(&id3);
+    assert_eq!(c.token_client.balance(&c.contract_id), AMOUNT * 3);
+
+    // Escrow 1: happy path confirm
+    c.client.mark_delivered(&id1, &hash(&c.env, 2));
+    c.client.confirm(&id1);
+    assert_eq!(c.client.get_escrow(&id1).unwrap().state, State::Released);
+
+    // Escrow 2: funded cancel
+    c.client.cancel(&id2, &c.seller);
+    assert_eq!(c.client.get_escrow(&id2).unwrap().state, State::Refunded);
+
+    // Escrow 3: dispute + 50% split with bond
+    c.client.mark_delivered(&id3, &hash(&c.env, 2));
+    c.client.dispute(&id3, &hash(&c.env, 3));
+    c.client.resolve(&id3, &Verdict::Split(5_000), &None, &None);
+    assert_eq!(
+        c.client.get_escrow(&id3).unwrap().state,
+        State::ResolvedSplit
+    );
+
+    // Contract balance is fully drained
+    assert_eq!(c.token_client.balance(&c.contract_id), 0);
+    // Seller got 1000 from id1 + 600 from id3 (50% of 1000+200) = 1600
+    assert_eq!(c.token_client.balance(&c.seller), 1_600);
+    // Buyer started with 10_000, paid 1000 on id1, net 0 on id2, paid 1200 and got 600 back on id3 -> 8_400
+    assert_eq!(c.token_client.balance(&c.buyer), 8_400);
+}
+
+#[test]
+fn timestamp_overflow_on_window_deadline_returns_overflow_error() {
+    let c = setup();
+    let id = c.create(c.single());
+    c.client.fund(&id);
+
+    // Set ledger timestamp near u64::MAX before delivery
+    c.env.ledger().with_mut(|li| li.timestamp = u64::MAX - 10);
+    c.client.mark_delivered(&id, &hash(&c.env, 2));
+
+    // Confirm and dispute windows are 200 and 100 respectively, so delivered_at + window overflows u64
+    assert_eq!(c.client.try_claim_timeout(&id), Err(Ok(Error::Overflow)));
+    assert_eq!(
+        c.client.try_dispute(&id, &hash(&c.env, 3)),
+        Err(Ok(Error::Overflow))
+    );
+}
+
+#[test]
+fn terminal_states_reject_all_subsequent_transitions() {
+    let c = setup();
+    let id = c.create(c.single());
+    c.client.fund(&id);
+    c.client.mark_delivered(&id, &hash(&c.env, 2));
+    c.client.confirm(&id);
+
+    assert_eq!(c.client.get_escrow(&id).unwrap().state, State::Released);
+
+    assert_eq!(c.client.try_fund(&id), Err(Ok(Error::InvalidState)));
+    assert_eq!(
+        c.client.try_mark_delivered(&id, &hash(&c.env, 2)),
+        Err(Ok(Error::InvalidState))
+    );
+    assert_eq!(c.client.try_confirm(&id), Err(Ok(Error::InvalidState)));
+    assert_eq!(
+        c.client.try_claim_timeout(&id),
+        Err(Ok(Error::InvalidState))
+    );
+    assert_eq!(
+        c.client.try_dispute(&id, &hash(&c.env, 3)),
+        Err(Ok(Error::InvalidState))
+    );
+    assert_eq!(
+        c.client
+            .try_resolve(&id, &Verdict::RefundBuyer, &None, &None),
+        Err(Ok(Error::InvalidState))
+    );
+    assert_eq!(
+        c.client.try_cancel(&id, &c.buyer),
+        Err(Ok(Error::InvalidState))
+    );
 }
