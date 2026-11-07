@@ -146,6 +146,14 @@ impl EscrowContract {
         e.state = State::Released;
         Self::put(&env, &e);
         events::confirmed(&env, escrow_id);
+        events::attestation(
+            &env,
+            escrow_id,
+            e.buyer.clone(),
+            e.seller.clone(),
+            State::Released,
+            e.amount,
+        );
         Ok(())
     }
 
@@ -168,6 +176,14 @@ impl EscrowContract {
         e.state = State::Released;
         Self::put(&env, &e);
         events::timed_out(&env, escrow_id);
+        events::attestation(
+            &env,
+            escrow_id,
+            e.buyer.clone(),
+            e.seller.clone(),
+            State::Released,
+            e.amount,
+        );
         Ok(())
     }
 
@@ -293,6 +309,14 @@ impl EscrowContract {
         e.state = new_state;
         Self::put(&env, &e);
         events::resolved(&env, escrow_id, new_state);
+        events::attestation(
+            &env,
+            escrow_id,
+            e.buyer.clone(),
+            e.seller.clone(),
+            new_state,
+            e.amount,
+        );
         Ok(())
     }
 
@@ -359,6 +383,14 @@ impl EscrowContract {
         e.state = State::Refunded;
         Self::put(&env, &e);
         events::cancelled(&env, escrow_id);
+        events::attestation(
+            &env,
+            escrow_id,
+            e.buyer.clone(),
+            e.seller.clone(),
+            State::Refunded,
+            e.amount,
+        );
         Ok(())
     }
 

@@ -854,7 +854,7 @@ fn resolve_by_non_arbiter_fails() {
 
 #[test]
 fn events_happy_path_matches_schema() {
-    use crate::events::Transition;
+    use crate::events::{AttestationRecord, Transition};
     use soroban_sdk::events::Event as _;
 
     let c = setup();
@@ -894,18 +894,28 @@ fn events_happy_path_matches_schema() {
     c.client.confirm(&id);
     assert_eq!(
         c.env.events().all().filter_by_contract(&c.contract_id),
-        [Transition {
-            kind: symbol_short!("confirmed"),
-            escrow: id,
-            state: State::Released,
-        }
-        .to_xdr(&c.env, &c.contract_id)]
+        [
+            Transition {
+                kind: symbol_short!("confirmed"),
+                escrow: id,
+                state: State::Released,
+            }
+            .to_xdr(&c.env, &c.contract_id),
+            AttestationRecord {
+                escrow: id,
+                buyer: c.buyer.clone(),
+                seller: c.seller.clone(),
+                outcome: State::Released,
+                amount_bucket: 0,
+            }
+            .to_xdr(&c.env, &c.contract_id),
+        ]
     );
 }
 
 #[test]
 fn events_dispute_path_matches_schema() {
-    use crate::events::Transition;
+    use crate::events::{AttestationRecord, Transition};
     use soroban_sdk::events::Event as _;
 
     let c = setup();
@@ -927,18 +937,28 @@ fn events_dispute_path_matches_schema() {
     c.client.resolve(&id, &Verdict::RefundBuyer, &None, &None);
     assert_eq!(
         c.env.events().all().filter_by_contract(&c.contract_id),
-        [Transition {
-            kind: symbol_short!("resolved"),
-            escrow: id,
-            state: State::ResolvedBuyer,
-        }
-        .to_xdr(&c.env, &c.contract_id)]
+        [
+            Transition {
+                kind: symbol_short!("resolved"),
+                escrow: id,
+                state: State::ResolvedBuyer,
+            }
+            .to_xdr(&c.env, &c.contract_id),
+            AttestationRecord {
+                escrow: id,
+                buyer: c.buyer.clone(),
+                seller: c.seller.clone(),
+                outcome: State::ResolvedBuyer,
+                amount_bucket: 0,
+            }
+            .to_xdr(&c.env, &c.contract_id),
+        ]
     );
 }
 
 #[test]
 fn events_cancel_and_timeout_paths_match_schema() {
-    use crate::events::Transition;
+    use crate::events::{AttestationRecord, Transition};
     use soroban_sdk::events::Event as _;
 
     let c = setup();
@@ -946,12 +966,22 @@ fn events_cancel_and_timeout_paths_match_schema() {
     c.client.cancel(&id, &c.buyer);
     assert_eq!(
         c.env.events().all().filter_by_contract(&c.contract_id),
-        [Transition {
-            kind: symbol_short!("cancelled"),
-            escrow: id,
-            state: State::Refunded,
-        }
-        .to_xdr(&c.env, &c.contract_id)]
+        [
+            Transition {
+                kind: symbol_short!("cancelled"),
+                escrow: id,
+                state: State::Refunded,
+            }
+            .to_xdr(&c.env, &c.contract_id),
+            AttestationRecord {
+                escrow: id,
+                buyer: c.buyer.clone(),
+                seller: c.seller.clone(),
+                outcome: State::Refunded,
+                amount_bucket: 0,
+            }
+            .to_xdr(&c.env, &c.contract_id),
+        ]
     );
 
     let id2 = c.create(ArbiterConfig::None);
@@ -961,12 +991,22 @@ fn events_cancel_and_timeout_paths_match_schema() {
     c.client.claim_timeout(&id2);
     assert_eq!(
         c.env.events().all().filter_by_contract(&c.contract_id),
-        [Transition {
-            kind: symbol_short!("timeout"),
-            escrow: id2,
-            state: State::Released,
-        }
-        .to_xdr(&c.env, &c.contract_id)]
+        [
+            Transition {
+                kind: symbol_short!("timeout"),
+                escrow: id2,
+                state: State::Released,
+            }
+            .to_xdr(&c.env, &c.contract_id),
+            AttestationRecord {
+                escrow: id2,
+                buyer: c.buyer.clone(),
+                seller: c.seller.clone(),
+                outcome: State::Released,
+                amount_bucket: 0,
+            }
+            .to_xdr(&c.env, &c.contract_id),
+        ]
     );
 }
 
@@ -1161,4 +1201,19 @@ fn dispute_bond_split_proportionally_on_split_verdict() {
     // Buyer gets back 700 of the 1400 they deposited (1000 principal + 400 bond)
     assert_eq!(c.token_client.balance(&c.buyer), 10_000 - 1_400 + 700);
     assert_eq!(c.token_client.balance(&c.seller), 700);
+}
+
+#[test]
+fn astrolabe_attestation_buckets_match_spec() {
+    use crate::events::compute_amount_bucket;
+
+    assert_eq!(compute_amount_bucket(0), 0);
+    assert_eq!(compute_amount_bucket(100_000_000), 0);
+    assert_eq!(compute_amount_bucket(100_000_001), 1);
+    assert_eq!(compute_amount_bucket(1_000_000_000), 1);
+    assert_eq!(compute_amount_bucket(1_000_000_001), 2);
+    assert_eq!(compute_amount_bucket(10_000_000_000), 2);
+    assert_eq!(compute_amount_bucket(10_000_000_001), 3);
+    assert_eq!(compute_amount_bucket(100_000_000_000), 3);
+    assert_eq!(compute_amount_bucket(100_000_000_001), 4);
 }
