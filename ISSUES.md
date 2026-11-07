@@ -68,16 +68,13 @@ Resolved: `ArbiterConfig::Panel(members, threshold)` enforces threshold requirem
 rejects duplicate signers or unauthorized callers. Covered by legal- and illegal-path unit tests,
 and documented in `docs/protocol.md` and `docs/threat-model.md`.
 
-## 8. Signed adjudicator verdicts
+## 8. Signed adjudicator verdicts (Resolved)
 Label: advanced
 
-`ArbiterConfig::Signed(key)` is declared but `resolve` returns `Unimplemented`.
-Implement verification of an off-chain verdict signed by the configured key, so an
-automated adjudicator can plug in (PRD section 4.5).
-
-Acceptance: `resolve` verifies the signature over a canonical verdict payload
-against the configured key; rejects a wrong key or a tampered payload; the payload
-canonicalisation is documented and matches what the SDK produces; full tests.
+Resolved: `resolve` verifies Ed25519 signatures over the canonical 32-byte payload format
+`umbra:adjudicate:v1 || escrow_id || verdict_tag || buyer_bps`. Unit tests verify valid signatures,
+unauthorized callers without signatures, wrong public keys, and tampered verdicts. Exposed companion
+entry point `resolve_signed`. Documented in `docs/protocol.md`.
 
 ## 9. Collateral vault, UMBR receipt asset, and clawback settlement
 Label: advanced — this is the single largest unclaimed piece
