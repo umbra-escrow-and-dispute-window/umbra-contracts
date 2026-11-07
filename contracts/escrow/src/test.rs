@@ -682,3 +682,119 @@ fn events_cancel_and_timeout_paths_match_schema() {
         .to_xdr(&c.env, &c.contract_id)]
     );
 }
+
+// --- Property tests for split rounding (Issue 3 / protocol.md) ---
+
+#[test]
+fn property_split_rounding_invariants_hold_across_ranges() {
+    let amounts: [i128; 14] = [
+        1,
+        2,
+        3,
+        7,
+        10,
+        99,
+        100,
+        1_000,
+        9_999,
+        10_000,
+        10_001,
+        100_000,
+        1_000_000_000,
+        i128::MAX / 10_000,
+    ];
+    let bps_samples: [u32; 11] = [
+        0, 1, 333, 1_000, 3_333, 4_999, 5_000, 5_001, 6_667, 9_999, 10_000,
+    ];
+
+    for &amount in &amounts {
+        for &bps in &bps_samples {
+            let buyer_amount = amount * i128::from(bps) / 10_000;
+            let seller_amount = amount - buyer_amount;
+
+            // Invariant 1: Total conservation of funds
+            assert_eq!(
+                buyer_amount + seller_amount,
+                amount,
+                "conservation failed for amount={amount}, bps={bps}"
+            );
+
+            // Invariant 2: Buyer share is floored division
+            assert_eq!(
+                buyer_amount,
+                (amount * i128::from(bps)) / 10_000,
+                "buyer flooring failed for amount={amount}, bps={bps}"
+            );
+
+            // Invariant 3: Neither share is negative
+            assert!(buyer_amount >= 0, "negative buyer share");
+            assert!(seller_amount >= 0, "negative seller share");
+
+            // Invariant 4: Remainder stroop goes to seller
+            if (amount * i128::from(bps)) % 10_000 != 0 {
+                let exact_unrounded_buyer_num = amount * i128::from(bps);
+                let floored_buyer_num = buyer_amount * 10_000;
+                assert!(exact_unrounded_buyer_num > floored_buyer_num);
+            }
+        }
+    }
+}
+
+#[test]
+fn property_split_contract_execution_conserves_balances() {
+    let test_cases: [(i128, u32); 6] = [
+        (1, 5_000),      // 1 stroop: buyer gets 0, seller gets 1
+        (7, 3_333),      // 7 stroops: 7 * 3333 / 10000 = 23331 / 10000 = 2 -> buyer 2, seller 5
+        (100, 2_500),    // exact 25/75 split
+        (999, 3_333),    // 999 * 3333 / 10000 = 3329667 / 10000 = 332 -> buyer 332, seller 667
+        (10_000, 1),     // 10000 * 1 / 10000 = 1 -> buyer 1, seller 9999
+        (10_000, 9_999), // 10000 * 9999 / 10000 = 9999 -> buyer 9999, seller 1
+    ];
+
+    for (amount, bps) in test_cases {
+        let env = Env::default();
+        env.mock_all_auths();
+        env.ledger().with_mut(|li| li.timestamp = START_TS);
+
+        let admin = Address::generate(&env);
+        let sac = env.register_stellar_asset_contract_v2(admin.clone());
+        let token = sac.address();
+        let token_client = TokenClient::new(&env, &token);
+
+        let buyer = Address::generate(&env);
+        let seller = Address::generate(&env);
+        let arbiter = Address::generate(&env);
+
+        StellarAssetClient::new(&env, &token).mint(&buyer, &(amount * 2));
+
+        let contract_id = env.register(EscrowContract, ());
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        let id = client.create_escrow(
+            &buyer,
+            &seller,
+            &token,
+            &amount,
+            &(START_TS + 500),
+            &CONFIRM_WINDOW,
+            &DISPUTE_WINDOW,
+            &ArbiterConfig::Single(arbiter.clone()),
+            &hash(&env, 1),
+        );
+
+        client.fund(&id);
+        client.mark_delivered(&id, &hash(&env, 2));
+        client.dispute(&id, &hash(&env, 3));
+        client.resolve(&id, &Verdict::Split(bps), &None);
+
+        let expected_buyer = amount * i128::from(bps) / 10_000;
+        let expected_seller = amount - expected_buyer;
+
+        assert_eq!(token_client.balance(&contract_id), 0);
+        assert_eq!(token_client.balance(&seller), expected_seller);
+        assert_eq!(
+            token_client.balance(&buyer),
+            (amount * 2) - amount + expected_buyer
+        );
+    }
+}
