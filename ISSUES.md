@@ -40,15 +40,12 @@ the bond from buyer to contract. `resolve` distributes the bond according to the
 on `RefundBuyer`, forfeited to seller on `ReleaseSeller`, or split per basis points. Documented in `docs/protocol.md`
 and `docs/threat-model.md`, and covered by unit tests.
 
-## 5. Astrolabe attestation on terminal states
+## 5. Astrolabe attestation on terminal states (Resolved)
 Label: intermediate
 
-Every terminal state should write an `agent-dispute-record` attestation so an
-agent marketplace can rank by dispute rate (PRD section 4.4).
-
-Acceptance: on reaching a terminal state the contract writes an attestation with
-escrow id, counterparty, outcome, and amount bucket; integration test on Testnet;
-depends on the Astrolabe schema being available.
+Resolved: On reaching any terminal state (`Released`, `Refunded`, `ResolvedBuyer`, `ResolvedSeller`, `ResolvedSplit`),
+the contract emits an `AttestationRecord` event under topics `["astrolabe", "record", escrow_id]` capturing buyer,
+seller, outcome state, and logarithmic amount bucket. Documented in `docs/events.md` and verified with unit tests.
 
 ## 6. Mainnet configuration and release checklist
 Label: intermediate
