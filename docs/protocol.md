@@ -35,7 +35,7 @@ before any state change.
 
 | ID | Call | From | To | Actor | Precondition | Effect |
 |----|------|------|----|-------|--------------|--------|
-| T1 | `create_escrow` | (none) | Created | buyer | `amount > 0`; `confirm_window > 0`; `dispute_window > 0` | Stores terms; assigns id. |
+| T1 | `create_escrow` | (none) | Created | buyer | `amount > 0`; `confirm_window > 0`; `dispute_window > 0`; `confirm_window >= dispute_window` | Stores terms; assigns id. |
 | T2 | `fund` | Created | Funded | buyer | buyer signs | Transfers `amount` of `asset` from buyer into the contract. |
 | T3 | `mark_delivered` | Funded | Delivered | seller | seller signs | Stores `proof_hash`; sets `delivered_at` to ledger time. Confirm and dispute windows start here. |
 | T4 | `confirm` | Delivered | Released | buyer | buyer signs | Pays `amount` to seller. |
@@ -106,6 +106,7 @@ that adding them later is not a breaking change.
 | 9 | ConfirmWindowOpen | Timeout claimed before the confirm window elapsed. |
 | 10 | InvalidVerdict | `Split` with `buyer_bps > 10000`. |
 | 11 | Overflow | Checked arithmetic overflowed. |
+| 12 | InvalidWindowOrdering | `confirm_window < dispute_window` at creation. |
 
 ## Deviation from the PRD signature
 
