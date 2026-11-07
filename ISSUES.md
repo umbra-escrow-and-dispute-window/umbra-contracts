@@ -32,15 +32,13 @@ Resolved: `property_split_rounding_invariants_hold_across_ranges` and
 `property_split_contract_execution_conserves_balances` assert invariant preservation
 across wide amount and basis point ranges without panics.
 
-## 4. Dispute bond to deter griefing
+## 4. Dispute bond to deter griefing (Resolved)
 Label: intermediate
 
-Disputing is free in v0.1, so a buyer can dispute in bad faith at no cost
-(`docs/threat-model.md`, "Griefing by disputes").
-
-Acceptance: an optional per-escrow dispute bond, posted on `dispute` and forfeited
-or returned per verdict, with legal- and illegal-path tests and a threat-model
-update. The bond amount is part of the escrow terms.
+Resolved: `create_escrow` accepts `dispute_bond: i128` (validating `dispute_bond >= 0`). `dispute` transfers
+the bond from buyer to contract. `resolve` distributes the bond according to the verdict: refunded to buyer
+on `RefundBuyer`, forfeited to seller on `ReleaseSeller`, or split per basis points. Documented in `docs/protocol.md`
+and `docs/threat-model.md`, and covered by unit tests.
 
 ## 5. Astrolabe attestation on terminal states
 Label: intermediate
