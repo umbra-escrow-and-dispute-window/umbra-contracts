@@ -23,4 +23,6 @@ pub enum Error {
     /// Split verdict with `buyer_bps` outside 0..=10000.
     InvalidVerdict = 10,
     Overflow = 11,
+    /// `confirm_window` is shorter than `dispute_window`, which would create a timeout race footgun.
+    InvalidWindowOrdering = 12,
 }
