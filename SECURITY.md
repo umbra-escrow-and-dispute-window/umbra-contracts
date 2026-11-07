@@ -27,10 +27,15 @@ itself. Pay particular attention to:
   split remainder goes to the seller. A change here can misdirect funds.
 - **State transitions.** The contract must never move funds except along the
   transition table. A new path out of a terminal state is a double-spend.
+- **Panel threshold and signed verdicts.** Panel resolution must enforce distinct
+  member signatures meeting `threshold`, and signed adjudicator resolution must
+  verify Ed25519 signatures over the canonical domain-separated payload.
+- **Dispute bond conservation.** Dispute bonds posted by buyers must be conserved
+  and distributed strictly according to the resolution verdict.
 
 ## Scope
 
-In scope: the contract in `contracts/escrow`, the deploy and demo scripts, and
-the deployment record. Out of scope for v0.1: the collateral vault, the `UMBR`
-receipt asset, clawback settlement, panel arbitration, and the adjudicator, none
-of which are built yet.
+In scope: the contract in `contracts/escrow` (including single, panel, and signed
+adjudication, dispute bonds, and terminal attestations), the deploy and demo scripts,
+and the deployment record. Out of scope: the collateral vault, the `UMBR` receipt
+asset, and post-release clawback settlement (tracked on the v0.3 roadmap).
