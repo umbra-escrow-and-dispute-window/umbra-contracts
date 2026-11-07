@@ -151,6 +151,7 @@ docs/
   events.md             Event schema for indexers and Astrolabe attestations
   threat-model.md       Arbiter capture, griefing, timeout races, clawback limits
   mainnet-checklist.md  Pre-deployment audit and release gate for Mainnet
+  roadmap.md            Completed v0.1/v0.2 milestones and v0.3 clawback architecture
   multi-repo.md         Cross-repository contract (shared across all three repos)
 scripts/
   deploy_testnet.sh     Build, deploy, write deployments/testnet.json
@@ -159,6 +160,12 @@ scripts/
 deployments/
   testnet.json          Deployment truth vendored by the SDK
 ```
+
+## Roadmap
+
+See `docs/roadmap.md` for completed v0.1 and v0.2 milestones and the architectural
+design for v0.3 (the collateral vault, `UMBR` receipt asset, and post-release
+clawback settlement tracked in `ISSUES.md`).
 
 ## Contributing
 
