@@ -14,7 +14,8 @@ pub enum Error {
     /// `dispute()` was called on an escrow whose arbiter is `None`, so no one
     /// could ever resolve it.
     ArbiterRequired = 6,
-    /// The requested arbiter variant is declared but not implemented in v0.1.
+    /// Retained for error-code stability across releases (v0.1 returned this
+    /// for `Panel` and `Signed` before both were implemented in v0.2).
     Unimplemented = 7,
     /// `dispute()` after the dispute window closed.
     DisputeWindowClosed = 8,
