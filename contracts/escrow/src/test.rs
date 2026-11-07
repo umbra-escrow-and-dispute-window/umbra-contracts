@@ -572,7 +572,7 @@ fn create_panel_rejects_invalid_threshold_or_duplicate_members() {
 }
 
 #[test]
-fn resolve_signed_arbiter_is_unimplemented() {
+fn resolve_signed_without_signature_fails() {
     let c = setup();
     let id = c.create(ArbiterConfig::Signed(hash(&c.env, 9)));
     c.client.fund(&id);
@@ -582,8 +582,96 @@ fn resolve_signed_arbiter_is_unimplemented() {
     assert_eq!(
         c.client
             .try_resolve(&id, &Verdict::RefundBuyer, &None, &None),
-        Err(Ok(Error::Unimplemented))
+        Err(Ok(Error::NotAuthorized))
     );
+}
+
+#[test]
+fn resolve_signed_with_valid_signature_succeeds() {
+    use ed25519_dalek::{Signer, SigningKey};
+
+    let c = setup();
+    let signing_key = SigningKey::from_bytes(&[42u8; 32]);
+    let verifying_key = signing_key.verifying_key();
+    let pubkey_bytes: BytesN<32> = BytesN::from_array(&c.env, &verifying_key.to_bytes());
+
+    let id = c.create(ArbiterConfig::Signed(pubkey_bytes));
+    c.client.fund(&id);
+    c.client.mark_delivered(&id, &hash(&c.env, 2));
+    c.client.dispute(&id, &hash(&c.env, 3));
+
+    let verdict = Verdict::RefundBuyer;
+    let payload = EscrowContract::signed_verdict_payload(&c.env, id, &verdict);
+    let mut raw_payload = [0u8; 32];
+    payload.copy_into_slice(&mut raw_payload);
+    let sig = signing_key.sign(&raw_payload);
+    let sig_bytes: BytesN<64> = BytesN::from_array(&c.env, &sig.to_bytes());
+
+    c.client.resolve_signed(&id, &verdict, &sig_bytes);
+
+    assert_eq!(
+        c.client.get_escrow(&id).unwrap().state,
+        State::ResolvedBuyer
+    );
+    assert_eq!(c.token_client.balance(&c.buyer), 10_000);
+}
+
+#[test]
+fn resolve_signed_with_wrong_key_fails() {
+    use ed25519_dalek::{Signer, SigningKey};
+
+    let c = setup();
+    let configured_key = SigningKey::from_bytes(&[42u8; 32]);
+    let other_key = SigningKey::from_bytes(&[7u8; 32]);
+
+    let pubkey_bytes: BytesN<32> =
+        BytesN::from_array(&c.env, &configured_key.verifying_key().to_bytes());
+
+    let id = c.create(ArbiterConfig::Signed(pubkey_bytes));
+    c.client.fund(&id);
+    c.client.mark_delivered(&id, &hash(&c.env, 2));
+    c.client.dispute(&id, &hash(&c.env, 3));
+
+    let verdict = Verdict::ReleaseSeller;
+    let payload = EscrowContract::signed_verdict_payload(&c.env, id, &verdict);
+    let mut raw_payload = [0u8; 32];
+    payload.copy_into_slice(&mut raw_payload);
+    // Signed by wrong key
+    let bad_sig = other_key.sign(&raw_payload);
+    let sig_bytes: BytesN<64> = BytesN::from_array(&c.env, &bad_sig.to_bytes());
+
+    let r = c.client.try_resolve_signed(&id, &verdict, &sig_bytes);
+    assert!(r.is_err());
+}
+
+#[test]
+fn resolve_signed_with_tampered_payload_fails() {
+    use ed25519_dalek::{Signer, SigningKey};
+
+    let c = setup();
+    let signing_key = SigningKey::from_bytes(&[42u8; 32]);
+    let pubkey_bytes: BytesN<32> =
+        BytesN::from_array(&c.env, &signing_key.verifying_key().to_bytes());
+
+    let id = c.create(ArbiterConfig::Signed(pubkey_bytes));
+    c.client.fund(&id);
+    c.client.mark_delivered(&id, &hash(&c.env, 2));
+    c.client.dispute(&id, &hash(&c.env, 3));
+
+    // Sign for ReleaseSeller
+    let legitimate_verdict = Verdict::ReleaseSeller;
+    let payload = EscrowContract::signed_verdict_payload(&c.env, id, &legitimate_verdict);
+    let mut raw_payload = [0u8; 32];
+    payload.copy_into_slice(&mut raw_payload);
+    let sig = signing_key.sign(&raw_payload);
+    let sig_bytes: BytesN<64> = BytesN::from_array(&c.env, &sig.to_bytes());
+
+    // Adversary attempts to use signature with RefundBuyer
+    let tampered_verdict = Verdict::RefundBuyer;
+    let r = c
+        .client
+        .try_resolve_signed(&id, &tampered_verdict, &sig_bytes);
+    assert!(r.is_err());
 }
 
 // --- Validation at creation ---

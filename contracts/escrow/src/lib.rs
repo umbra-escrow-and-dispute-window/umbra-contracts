@@ -196,7 +196,7 @@ impl EscrowContract {
     }
 
     /// protocol.md T7. The escrow's arbiter resolves a dispute. `signature` is
-    /// reserved for the `Signed` adjudicator variant, and `signers` supplies the
+    /// used for the `Signed` adjudicator variant, and `signers` supplies the
     /// authorizing members for the `Panel` arbiter variant.
     pub fn resolve(
         env: Env,
@@ -205,7 +205,6 @@ impl EscrowContract {
         signature: Option<BytesN<64>>,
         signers: Option<soroban_sdk::Vec<Address>>,
     ) -> Result<(), Error> {
-        let _ = signature;
         let mut e = Self::load(&env, escrow_id)?;
         if e.state != State::Disputed {
             return Err(Error::InvalidState);
@@ -241,7 +240,11 @@ impl EscrowContract {
             // Unreachable: `dispute()` rejects `ArbiterConfig::None`. Kept explicit
             // so a future edit to `dispute()` cannot silently open this path.
             ArbiterConfig::None => return Err(Error::ArbiterRequired),
-            ArbiterConfig::Signed(_) => return Err(Error::Unimplemented),
+            ArbiterConfig::Signed(public_key) => {
+                let sig = signature.ok_or(Error::NotAuthorized)?;
+                let payload = Self::signed_verdict_payload(&env, escrow_id, &verdict);
+                env.crypto().ed25519_verify(public_key, &payload, &sig);
+            }
         }
 
         let new_state = match verdict {
@@ -289,6 +292,42 @@ impl EscrowContract {
         signers: soroban_sdk::Vec<Address>,
     ) -> Result<(), Error> {
         Self::resolve(env, escrow_id, verdict, None, Some(signers))
+    }
+
+    /// Companion entry point for resolving disputes governed by `ArbiterConfig::Signed`.
+    pub fn resolve_signed(
+        env: Env,
+        escrow_id: u64,
+        verdict: Verdict,
+        signature: BytesN<64>,
+    ) -> Result<(), Error> {
+        Self::resolve(env, escrow_id, verdict, Some(signature), None)
+    }
+
+    /// Canonical payload for signed adjudicator verdicts (32 bytes).
+    pub fn signed_verdict_payload(
+        env: &Env,
+        escrow_id: u64,
+        verdict: &Verdict,
+    ) -> soroban_sdk::Bytes {
+        let mut payload = soroban_sdk::Bytes::new(env);
+        payload.extend_from_array(b"umbra:adjudicate:v1");
+        payload.extend_from_array(&escrow_id.to_be_bytes());
+        match verdict {
+            Verdict::RefundBuyer => {
+                payload.push_back(0);
+                payload.extend_from_array(&0u32.to_be_bytes());
+            }
+            Verdict::ReleaseSeller => {
+                payload.push_back(1);
+                payload.extend_from_array(&0u32.to_be_bytes());
+            }
+            Verdict::Split(bps) => {
+                payload.push_back(2);
+                payload.extend_from_array(&bps.to_be_bytes());
+            }
+        }
+        payload
     }
 
     /// protocol.md T8. Either party cancels before delivery. Any funds return
