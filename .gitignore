@@ -3,4 +3,4 @@
 Cargo.lock.bak
 .env
 deployments/local-testnet.json
-contracts/escrow/test_snapshots/
+contracts/**/test_snapshots/

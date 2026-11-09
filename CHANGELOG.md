@@ -5,6 +5,14 @@ All notable changes to `umbra-contracts` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-11-09
+
+### Added
+- **Collateral Vault Contract (`contracts/vault`, Issue 9)**: Implemented `UmbraVaultContract` providing seller collateral staking, deposit and withdrawal accounting with unencumbered balance checks, instant-release liability locking (`lock_collateral`), time-bounded lock release (`release_lock`), and arbiter-authorized dispute slashing and refund (`slash_and_refund`).
+- **Vault Event Schemas**: Defined structured contract events (`VaultDepositEvent`, `VaultWithdrawEvent`, `VaultLockEvent`, `VaultUnlockEvent`, `VaultSlashEvent`) published under topics `["vault", ...]`.
+- **Collateral Sizing Model (Issue 10)**: Authored `docs/collateral-sizing.md` detailing formal discrete per-escrow staking formulas, fractional portfolio variance models, assumptions, and failure-mode mitigations.
+- **Invariance & Property Testing**: Added unit tests and property test `property_vault_funds_and_liabilities_strictly_conserved` asserting balance and liability conservation across all vault transitions (64 passing tests across workspace).
+
 ## [0.2.0] - 2026-11-07
 
 ### Added
