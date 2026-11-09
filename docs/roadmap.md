@@ -26,7 +26,7 @@ This document tracks the evolution of `umbra-contracts` from its initial state-m
 
 ---
 
-## Planned for v0.3 — Post-Release Reversal & Collateral Vault (~10% Remaining)
+## Planned for v0.3 — Post-Release Reversal & Collateral Vault (Days 9–12)
 
 ### 1. Collateral Vault, `UMBR` Receipt Asset, and Clawback Settlement (Issue 9 / M6)
 
@@ -45,6 +45,12 @@ Per `docs/threat-model.md` ("What clawback will and will not do"), post-release 
 
 ### 2. Economic Analysis of Collateral Sizing (Issue 10 / M9)
 
-Before lifting the per-seller window cap in the collateral vault, a formal model in `docs/` will specify:
+Before lifting the per-seller window cap in the collateral vault, a formal model in `docs/collateral-sizing.md` specifies:
 - Minimum collateral-to-volume ratios (`C >= k * V_open`) as a function of `dispute_window` length and historical Astrolabe dispute rates.
 - Liquidation and top-up thresholds when a seller runs concurrent escrows against a shared collateral pool.
+
+### 3. Execution Schedule (Days 9–12)
+- **Day 9**: Core Collateral Vault contract (`contracts/vault`), deposit/withdraw accounting, and storage isolation.
+- **Day 10**: Instant-release lock mechanics, release upon window expiry, and arbiter slashing.
+- **Day 11**: Formal economic analysis (`docs/collateral-sizing.md`) and mathematical property invariant tests.
+- **Day 12**: Protocol v0.3 release, changelog finalization, and multi-repo sync.
