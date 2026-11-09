@@ -269,3 +269,71 @@ fn test_multi_seller_isolation() {
     assert_eq!(s2.locked_collateral, 0);
     assert_eq!(s2.available_collateral, 60_000);
 }
+
+#[test]
+fn property_vault_funds_and_liabilities_strictly_conserved() {
+    let (env, _admin, escrow, seller, buyer, token_client, _, vault_client) = setup_test();
+
+    // Invariant: total token balance in vault == sum of all sellers' total_collateral
+    // and available == total - locked at all times.
+    let deposit_amount: i128 = 75_000;
+    vault_client.deposit(&seller, &token_client.address, &deposit_amount);
+
+    let summary1 = vault_client.get_summary(&seller, &token_client.address);
+    assert_eq!(summary1.total_collateral, deposit_amount);
+    assert_eq!(summary1.available_collateral, deposit_amount);
+    assert_eq!(
+        token_client.balance(&vault_client.address),
+        summary1.total_collateral
+    );
+
+    // Lock a portion
+    let lock_amount: i128 = 30_000;
+    let expires = env.ledger().timestamp() + 500;
+    vault_client.lock_collateral(
+        &escrow,
+        &seller,
+        &token_client.address,
+        &lock_amount,
+        &1,
+        &expires,
+    );
+
+    let summary2 = vault_client.get_summary(&seller, &token_client.address);
+    assert_eq!(summary2.total_collateral, deposit_amount);
+    assert_eq!(summary2.locked_collateral, lock_amount);
+    assert_eq!(summary2.available_collateral, deposit_amount - lock_amount);
+    assert_eq!(
+        token_client.balance(&vault_client.address),
+        summary2.total_collateral
+    );
+
+    // Slash a portion
+    let slash_amount: i128 = 12_000;
+    vault_client.slash_and_refund(&escrow, &seller, &buyer, &1, &slash_amount);
+
+    let summary3 = vault_client.get_summary(&seller, &token_client.address);
+    assert_eq!(summary3.total_collateral, deposit_amount - slash_amount);
+    assert_eq!(summary3.locked_collateral, lock_amount - slash_amount);
+    assert_eq!(
+        summary3.available_collateral,
+        (deposit_amount - slash_amount) - (lock_amount - slash_amount)
+    );
+    assert_eq!(
+        token_client.balance(&vault_client.address),
+        summary3.total_collateral
+    );
+    assert_eq!(token_client.balance(&buyer), slash_amount);
+
+    // Unlock remainder after expiry
+    env.ledger().set_timestamp(expires + 1);
+    vault_client.release_lock(&seller, &seller, &1);
+
+    let summary4 = vault_client.get_summary(&seller, &token_client.address);
+    assert_eq!(summary4.locked_collateral, 0);
+    assert_eq!(summary4.available_collateral, summary4.total_collateral);
+    assert_eq!(
+        token_client.balance(&vault_client.address),
+        summary4.total_collateral
+    );
+}
