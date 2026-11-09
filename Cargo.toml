@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["contracts/escrow"]
+members = ["contracts/escrow", "contracts/vault"]
 
 [workspace.package]
 version = "0.2.0"
