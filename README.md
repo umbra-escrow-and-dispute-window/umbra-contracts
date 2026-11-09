@@ -29,13 +29,9 @@ The contract implements the full escrow state machine with:
 - **Window safety**: Enforces `confirm_window >= dispute_window` at creation to prevent timeout races.
 - **Indexer & Astrolabe events**: Emits structured `Transition` events on every transition and
   `AttestationRecord` events on every terminal outcome (`docs/events.md`).
-
-The collateral vault, the `UMBR` receipt asset, and post-release clawback settlement
-are tracked on the roadmap in `ISSUES.md` (Issues 9 and 10). Until they land, a payment
-can only be reversed before it is released, while the contract still holds the funds.
-What clawback will and will not do is described in `docs/threat-model.md`, and it is
-deliberately narrow: only Umbra's own receipt asset, only inside the agreed window,
-always opt-in.
+- **Collateral Vault (`contracts/vault`)**: Staked seller collateral backing post-release
+  reversals and instant-release escrows, with economic reserve formulas detailed in
+  `docs/collateral-sizing.md`.
 
 ## Protocol Capabilities
 
@@ -50,6 +46,9 @@ always opt-in.
 | Resolution | `resolve` / `resolve_panel` / `resolve_signed` | Distributes principal and bond per `RefundBuyer`, `ReleaseSeller`, or `Split(bps)`. |
 | Cancellation | `cancel` | Either party cancels before delivery; refunds buyer if funded. |
 | TTL Extension | `extend_escrow_ttl` | Extends persistent and instance storage TTL for long-lived agreements. |
+| Collateral Staking | `contracts/vault::deposit` / `withdraw` | Manages seller reserves with unencumbered balance checks. |
+| Liability Lock | `contracts/vault::lock_collateral` / `release_lock` | Locks collateral during instant-release windows. |
+| Clawback Slashing | `contracts/vault::slash_and_refund` | Draws locked seller collateral to refund buyer on dispute uphold. |
 
 ## The state machine
 
