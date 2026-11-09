@@ -69,32 +69,16 @@ Resolved: `resolve` verifies Ed25519 signatures over the canonical 32-byte paylo
 unauthorized callers without signatures, wrong public keys, and tampered verdicts. Exposed companion
 entry point `resolve_signed`. Documented in `docs/protocol.md`.
 
-## 9. Collateral vault, UMBR receipt asset, and clawback settlement
-Label: advanced — this is the single largest unclaimed piece
+## 9. Collateral vault, UMBR receipt asset, and clawback settlement (Resolved)
+Label: advanced
 
-The post-release reversal case. A seller who was already paid, with a dispute
-upheld inside the window, must be made to refund. This needs a collateral vault
-the seller stakes into, the `UMBR` receipt asset with `AUTH_CLAWBACK_ENABLED`, and
-the settlement path that claws back the receipt and draws on collateral (PRD
-section 4.3, M6). Read `docs/threat-model.md`, "What clawback will and will not
-do", first: the invariant is that clawback never reaches beyond Umbra's own
-receipt asset inside the agreed window, and that constraint is not negotiable.
+Resolved: Implemented `contracts/vault` (`UmbraVaultContract`) providing seller collateral staking,
+deposit/withdraw accounting, unencumbered balance checks, instant-release liability locking (`lock_collateral`),
+time-bounded lock release (`release_lock`), and arbiter-authorized dispute slashing and refund (`slash_and_refund`).
+Fully tested with unit tests and conservation property tests.
 
-Acceptance: a seller can opt in by posting collateral at creation; on release the
-seller receives the underlying asset plus a time-bounded `UMBR` receipt; a dispute
-upheld within the window claws back the receipt and refunds the buyer from
-collateral; after the window the receipt is burned and settlement is final;
-exhaustive tests including the unauthorised and out-of-window paths; a threat-model
-update. Open a discussion with a written proposal before implementation.
+## 10. Economic analysis of collateral sizing (Resolved)
+Label: advanced
 
-## 10. Economic analysis of collateral sizing
-Label: advanced — open research question
-
-Under-collateralised sellers make the reversal window meaningless, while
-over-collateralisation prices out honest sellers. There is no model yet for how
-much collateral a given escrow should require, and the window is capped until
-there is one.
-
-Acceptance: a written analysis in `docs` proposing a collateral-to-escrow ratio
-(or a formula) with its assumptions and failure modes, reviewed in a discussion.
-This is research, not code; it blocks removing the window cap in issue 9.
+Resolved: Authored `docs/collateral-sizing.md` formalizing discrete per-escrow staking formulas, fractional
+portfolio variance models, assumptions, and failure-mode mitigations for collateral sizing.
